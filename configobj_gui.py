@@ -379,8 +379,8 @@ class WidgetCreator(object):
 		return widget
 
 class ConfigWindow(QMainWindow):
-	APPLY_IMMEDIATELY = 1
-	APPLY_OK = 2
+	APPLY_IMMEDIATELY = 1 # GNOME style, apply settings immediately
+	APPLY_OK = 2 # KDE style, apply settings when OK is pressed
 	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, parent = None):
 		QMainWindow.__init__(self, parent)
 
@@ -397,7 +397,8 @@ class ConfigWindow(QMainWindow):
 
 		self.setWindowTitle(title)
 		res = conf.validate(validate.Validator(), preserve_errors=True)
-		options = configobj.ConfigObj(merge_spec(conf, spec))
+		options = configobj.ConfigObj()
+		merge_spec(conf, spec, options)
 		main = QWidget()
 		layout = QVBoxLayout(main)
 		self.setCentralWidget(main)
@@ -485,20 +486,20 @@ class ConfigWindow(QMainWindow):
 		for widget in self.widgets:
 			widget.restoreDefault()
 
-def merge_spec(config, spec):
-	combined = {}
+def merge_spec(config, spec, combined):
+	#combined = configobj.Section(parent, parent.depth +1 , parent.main
 	for section in config.sections:
 		if section in spec:
-			combined[section] = merge_spec(config[section], spec[section])
+			combined[section] = {}
+			merge_spec(config[section], spec[section], combined[section])
 		elif '__many__' in spec:
-			combined[section] = merge_spec(config[section], spec['__many__'])
+			merge_spec(config[section], spec['__many__'], combined[section])
 	for option in spec.scalars:
 		comment = spec.inline_comments[option]
 		if comment and comment.startswith('#'):
 			comment = comment[1:].strip()
 		fun_name, fun_args, fun_kwargs, default = validator._parse_with_caching(spec[option]) # WARNING: Uses unoffical method!
 		combined[option] = Option(option, config, fun_name, fun_args, fun_kwargs, default, comment)
-	return combined
 
 if __name__ == '__main__':
 	def main():
@@ -517,18 +518,22 @@ if __name__ == '__main__':
 			nondefault = integer # An integer with no default value
 
 			[other]
-			[[level2]]
+			[[__many__]]
 			enabled = boolean(default=True)
 		"""
 		configtxt = """
 			[main]
 			nondefault = 4
+			notinspec = foo
+			[other]
+			[[level2]]
 		"""
+		app = QApplication(sys.argv)
+
 		spec = configobj.ConfigObj(spectxt.split('\n'), list_values=False)
 		config = configobj.ConfigObj(configtxt.split('\n'), configspec=spec)
 
-		app = QApplication(sys.argv)
-		wnd = ConfigWindow(config, spec, when_apply=ConfigWindow.APPLY_OK, debug=True)
+		wnd = ConfigWindow(config, spec, when_apply=ConfigWindow.APPLY_IMMEDIATELY)
 		wnd.show()
 		app.exec_()
 		print config
