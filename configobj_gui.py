@@ -383,7 +383,6 @@ class ConfigWindow(QMainWindow):
 	APPLY_OK = 2 # KDE style, apply settings when OK is pressed
 	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, parent = None):
 		QMainWindow.__init__(self, parent)
-
 		res = conf.validate(validate.Validator(), preserve_errors=True)
 
 		# Make changes to a copy of the original conf if needed
@@ -443,14 +442,16 @@ class ConfigWindow(QMainWindow):
 		pages = {}
 		self.widgets = []
 
-		def addToTree(root, tree):
-			for section in [root[x] for x in root.sections]:
-				section = root[section.name]
-				item = QTreeWidgetItem(tree, [section.name])
-				addToTree(section, item)
-				page = createConfigPage(section)
-				pages[item] = stacked.addWidget(page)
+		self.tree = tree
+		self.treeitemlookup = {}
+		self.pages = pages
+		self.stacked = stacked
+		self.addSection(options)
 
+		tree.currentItemChanged.connect(self.changePage)
+
+
+	def addSection(self, newsection):
 		def createConfigPage(section):
 			widget = QWidget()
 			layout = QGridLayout()
@@ -465,13 +466,20 @@ class ConfigWindow(QMainWindow):
 				i += 1
 			layout.addItem(QSpacerItem(0, 0, QSizePolicy.Preferred, QSizePolicy.Expanding), i, 0)
 			return widget
+		page = createConfigPage(newsection)
 
-		addToTree(options, tree)
+		if newsection.name == None: # Top-level
+			item = QTreeWidgetItem(self.tree, ['Root'])
+			self.tree.addTopLevelItem(item)
+		else:
+			parent_item = self.treeitemlookup[id(newsection.parent)]
+			item = QTreeWidgetItem(parent_item, [newsection.name])
+		self.treeitemlookup[id(newsection)] = item
 
-		tree.currentItemChanged.connect(self.changePage)
+		self.pages[item] = self.stacked.addWidget(page)
 
-		self.pages = pages
-		self.stacked = stacked
+		for section in [newsection[x] for x in newsection.sections]:
+			self.addSection(section)
 
 	def changePage(self, current, previous):
 		index = self.pages[current]
@@ -493,6 +501,7 @@ def merge_spec(config, spec):
 		elif '__many__' in spec:
 			combined[section] = merge_spec(config[section], spec['__many__'])
 		combined[section].name = section
+		combined[section].parent = combined
 	for option in spec.scalars:
 		comment = spec.inline_comments[option]
 		if comment and comment.startswith('#'):
@@ -504,7 +513,6 @@ def merge_spec(config, spec):
 if __name__ == '__main__':
 	def main():
 		spectxt = """
-			[main]
 			mystring = string(default='foo',min=2,max=10) # A string
 			myinteger = integer(default=4, min=-2, max=10) # A integer with min and max
 			myinteger2 = integer(default=2, min=-1) # A integer with min but no max
@@ -517,16 +525,16 @@ if __name__ == '__main__':
 			mycheckbox = boolean(default=True) # A checkbox
 			nondefault = integer # An integer with no default value
 
-			[other]
-			[[__many__]]
+			[__many__]
+			[[level2]]
 			enabled = boolean(default=True)
 		"""
 		configtxt = """
-			[main]
 			nondefault = 4
 			notinspec = foo
-			[other]
+			[section]
 			[[level2]]
+			[other]
 		"""
 		app = QApplication(sys.argv)
 
