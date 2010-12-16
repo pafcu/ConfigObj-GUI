@@ -34,6 +34,58 @@ class Option(object):
 		return 'Option(%s,%s,%s,%s,%s,%s,%s)'%(self.name, self.section, self.type, self.args, self.kwargs, self.default, self.comment)
 
 
+class ConfigPage(QWidget):
+	def __init__(self, section, item, parent=None):
+		QWidget.__init__(self, parent)
+		layout = QGridLayout()
+		self.setLayout(layout)
+		i = 0
+		for option in [section[x] for x in section.scalars]:
+			label = QLabel(option.name)
+			layout.addWidget(label, i, 0)
+			valueWidget = WidgetCreator.forOption(option)
+			layout.addWidget(valueWidget, i, 1)
+			i += 1
+		layout.addItem(QSpacerItem(0, 0, QSizePolicy.Preferred, QSizePolicy.Expanding), i, 0)
+
+		self.item = item
+
+	def restoreDefault(self):
+		for widget in [self.layout().widget(i) for i in range(self.layout().count())]:
+				widget.restoreDefault()
+
+class SectionBrowser(QWidget):
+	def __init__(self, conf, parent=None):
+		QWidget.__init__(self, parent)
+		layout = QVBoxLayout(self)
+		self.tree = QTreeWidget()
+		self.tree.header().hide()
+		self.tree.currentItemChanged.connect(lambda new,old: self.currentItemChanged.emit(new))
+		
+		layout.addWidget(self.tree)
+		
+		self.treeitemlookup = {}
+		self.conf = conf
+
+	currentItemChanged = pyqtSignal(QTreeWidgetItem)
+
+	def addSection(self, newsection):
+		if newsection.name == None: # Top-level
+			item = QTreeWidgetItem(self.tree, ['Root'])
+			self.tree.addTopLevelItem(item)
+		else:
+			parent_item = self.treeitemlookup[id(newsection.parent)]
+			item = QTreeWidgetItem(parent_item, [newsection.name])
+
+		page = ConfigPage(newsection, item)
+		self.treeitemlookup[id(newsection)] = item
+
+		pages = [page]
+		for section in [newsection[x] for x in newsection.sections]:
+			pages.extend(self.addSection(section))
+
+		return pages
+
 # Hack to make QScrollArea resize to a suitable size
 class MyScrollArea(QScrollArea):
 	def __init__(self, parent=None):
@@ -404,9 +456,8 @@ class ConfigWindow(QMainWindow):
 		splitter = QSplitter()
 		layout.addWidget(splitter)
 		self.splitter = splitter
-		tree = QTreeWidget()
-		tree.header().hide()
-		splitter.addWidget(tree)
+		browser = SectionBrowser(conf)
+		splitter.addWidget(browser)
 
 		if when_apply == ConfigWindow.APPLY_IMMEDIATELY:
 			buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.RestoreDefaults)
@@ -439,59 +490,27 @@ class ConfigWindow(QMainWindow):
 		splitter.addWidget(configArea)
 		configArea.setWidgetResizable(True)
 
-		pages = {}
-		self.widgets = []
-
-		self.tree = tree
-		self.treeitemlookup = {}
-		self.pages = pages
 		self.stacked = stacked
-		self.addSection(options)
 
-		tree.currentItemChanged.connect(self.changePage)
+		self.pages = {}
+		pages = browser.addSection(options)
+		for page in pages:
+			self.pages[page.item] = self.stacked.addWidget(page)
 
+		browser.currentItemChanged.connect(self.changePage)
 
-	def addSection(self, newsection):
-		def createConfigPage(section):
-			widget = QWidget()
-			layout = QGridLayout()
-			widget.setLayout(layout)
-			i = 0
-			for option in [section[x] for x in section.scalars]:
-				label = QLabel(option.name)
-				layout.addWidget(label, i, 0)
-				valueWidget = WidgetCreator.forOption(option)
-				layout.addWidget(valueWidget, i, 1)
-				self.widgets.append(valueWidget)
-				i += 1
-			layout.addItem(QSpacerItem(0, 0, QSizePolicy.Preferred, QSizePolicy.Expanding), i, 0)
-			return widget
-		page = createConfigPage(newsection)
-
-		if newsection.name == None: # Top-level
-			item = QTreeWidgetItem(self.tree, ['Root'])
-			self.tree.addTopLevelItem(item)
-		else:
-			parent_item = self.treeitemlookup[id(newsection.parent)]
-			item = QTreeWidgetItem(parent_item, [newsection.name])
-		self.treeitemlookup[id(newsection)] = item
-
-		self.pages[item] = self.stacked.addWidget(page)
-
-		for section in [newsection[x] for x in newsection.sections]:
-			self.addSection(section)
-
-	def changePage(self, current, previous):
-		index = self.pages[current]
+	def changePage(self, newItem):
+		index = self.pages[newItem]
 		self.stacked.setCurrentIndex(index)
 
 	def updateOriginalConf(self):
 		if self.original_conf:
 			for key in self.conf:
 				self.original_conf[key] = self.conf[key]
+
 	def resetAll(self):
-		for widget in self.widgets:
-			widget.restoreDefault()
+		for page in self.pages:
+			page.restoreDefault()
 
 def merge_spec(config, spec):
 	combined = configobj.ConfigObj()
