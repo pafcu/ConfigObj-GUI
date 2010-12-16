@@ -397,8 +397,7 @@ class ConfigWindow(QMainWindow):
 
 		self.setWindowTitle(title)
 		res = conf.validate(validate.Validator(), preserve_errors=True)
-		options = configobj.ConfigObj()
-		merge_spec(conf, spec, options)
+		options = merge_spec(conf, spec)
 		main = QWidget()
 		layout = QVBoxLayout(main)
 		self.setCentralWidget(main)
@@ -486,20 +485,21 @@ class ConfigWindow(QMainWindow):
 		for widget in self.widgets:
 			widget.restoreDefault()
 
-def merge_spec(config, spec, combined):
-	#combined = configobj.Section(parent, parent.depth +1 , parent.main
+def merge_spec(config, spec):
+	combined = configobj.ConfigObj()
 	for section in config.sections:
 		if section in spec:
-			combined[section] = {}
-			merge_spec(config[section], spec[section], combined[section])
+			combined[section] = merge_spec(config[section], spec[section])
 		elif '__many__' in spec:
-			merge_spec(config[section], spec['__many__'], combined[section])
+			combined[section] = merge_spec(config[section], spec['__many__'])
+		combined[section].name = section
 	for option in spec.scalars:
 		comment = spec.inline_comments[option]
 		if comment and comment.startswith('#'):
 			comment = comment[1:].strip()
 		fun_name, fun_args, fun_kwargs, default = validator._parse_with_caching(spec[option]) # WARNING: Uses unoffical method!
 		combined[option] = Option(option, config, fun_name, fun_args, fun_kwargs, default, comment)
+	return combined
 
 if __name__ == '__main__':
 	def main():
