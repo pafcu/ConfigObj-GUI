@@ -123,22 +123,33 @@ class SectionBrowser(QWidget):
 		self.removeButton.setEnabled(conf.optional)
 
 	def addEmptySection(self, item):
-		parent = self.page_lookup[item].conf
-		spec = parent.spec['__many__']
+		parent = self.page_lookup[item].conf # Load combined config for page matching selected item
+		spec = parent.spec['__many__'] # Get spec
 		conf = configobj.ConfigObj(configspec=spec)
-		conf.validate(validator)
-		combined = merge_spec(conf,spec)
-		combined.parent = parent
+		conf.validate(validator) # Create an empty config matching spec
+
+		combined = merge_spec(conf, spec) # Combine spec and new config
 
 		name, ok = QInputDialog.getText(self,'Add new section','Section name:')
 		if ok:
 			name = str(name)
 			combined.name = name
-			conf.name = name
+			combined.parent = parent
 			parent[name] = combined
+
+
+			# Copy new config information into old config
+			# Workaround for ConfigObj issues
 			parent.conf[name] = {}
+			def fix_depth(section):
+				section.depth = section.parent.depth + 1
+				[fix_depth(s) for s in section.sections]
 			for key in conf:
 				parent.conf[name][key] = conf[key]
+				conf[key].parent = parent.conf[name][key]
+				if isinstance(conf[key], configobj.Section):
+					fix_depth(conf[key])
+
 			self.addSection(combined)
 
 	def removeSection(self, item):
