@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import sys
 import copy
 
@@ -675,39 +676,29 @@ def merge_spec(config, spec):
 
 	return combined
 
+
+def configure_externally(config, spec):
+	"""Launch a ConfigWindow in an external process"""
+	import cPickle, subprocess, time
+	while 1:
+		try:
+			proc = subprocess.Popen([__file__], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+			break
+		except OSError, e:
+			if e.errno == 13:
+				time.sleep(0.1)
+			else:
+				raise e
+	time.sleep(0.5)
+	newconf = cPickle.loads(proc.communicate(cPickle.dumps((config, spec)))[0])
+	newconf.write(sys.stdout)
+
 if __name__ == '__main__':
-	def main():
-		spectxt = """
-			mystring = string(default='foo',min=2,max=10) # A string
-			myinteger = integer(default=4, min=-2, max=10) # A integer with min and max
-			myinteger2 = integer(default=2, min=-1) # A integer with min but no max
-			myoption = option(default='baz','bar','baz') # Options
-			myip = ip_addr(default='127.0.0.1') # An IP address
-			mylist = list(default=list('a','b')) # A list
-			myintlist = int_list(default=list(1,2)) # A list of integers
-			myfloat = float(default=2.2, min=-1, max=10.0) # A float with min and max
-			myfloat2 = float(default=1.1, min=-0.2) # A float with min but no max
-			mycheckbox = boolean(default=True) # A checkbox
-			nondefault = integer # An integer with no default value
+	import cPickle
+	conf, spec = cPickle.loads(sys.stdin.read())
+	app = QtGui.QApplication(sys.argv)
+	wnd = ConfigWindow(conf, spec)
+	wnd.show()
+	app.exec_()
+	print cPickle.dumps(conf),
 
-			[__many__]
-			[[level2]]
-			enabled = boolean(default=True)
-		"""
-		configtxt = """
-			notinspec = foo
-			[section]
-			[[level2]]
-			[other]
-		"""
-		app = QtGui.QApplication(sys.argv)
-
-		spec = configobj.ConfigObj(spectxt.split('\n'), list_values=False)
-		config = configobj.ConfigObj(configtxt.split('\n'), configspec=spec)
-
-		wnd = ConfigWindow(config, spec, when_apply=ConfigWindow.APPLY_IMMEDIATELY, debug=True)
-		wnd.show()
-		app.exec_()
-		print '\n'.join(config.write())
-
-	main()

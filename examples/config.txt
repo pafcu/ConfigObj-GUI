@@ -1,0 +1,6 @@
+notinspec = foo
+myip = 127.0.1.1
+[section]
+[[level2]]
+[other]
+[[level2]]
