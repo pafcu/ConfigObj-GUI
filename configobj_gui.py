@@ -4,13 +4,15 @@ import copy
 import configobj
 import validate
 
-from PyQt4.QtGui import *
-from PyQt4.QtCore import *
+#from PyQt4.QtGui import *
+#from PyQt4.QtCore import *
+from PyQt4 import QtGui
+from PyQt4 import QtCore
 
 validator = validate.Validator()
 
-# Describes a configobj value and its type
 class Option(object):
+	"""Description and value of an option"""
 	def __init__(self, name, section, type, args, kwargs, default, comment):
 		self.name = name
 		self.section = section
@@ -19,9 +21,13 @@ class Option(object):
 		self.kwargs = kwargs
 		self.default = default
 		self.comment = comment
+
 	def get(self):
+		"""Get current value of the option"""
 		return self.section[self.name]
+
 	def set(self, value):
+		"""Get current value of the option"""
 		# Workaround for problem in validate with lists from string
 		value = str(value) # Start with a normal string
 		if self.type.endswith('list'):
@@ -30,80 +36,93 @@ class Option(object):
 			self.section[self.name] = validator.functions[self.type](value, *self.args, **self.kwargs)
 		except:
 			pass
+
 	def __repr__(self):
+		"""Convert option to string for debugging purposes"""
 		return 'Option(%s,%s,%s,%s,%s,%s,%s)'%(self.name, self.section, self.type, self.args, self.kwargs, self.default, self.comment)
 
 	def restoreDefault(self):
+		"""Change option value to the default value"""
 		self.section.restore_default(self.name)
 
-
 	def isDefault(self):
+		"""Check whether the option has the default value"""
 		return self.name in self.section.defaults
 
 
-class ConfigPage(QWidget):
+class ConfigPage(QtGui.QWidget):
+	"""Container for widgets describing options in a section"""
 	def __init__(self, section, item, parent=None):
-		QWidget.__init__(self, parent)
-		layout = QGridLayout()
-		self.setLayout(layout)
+		QtGui.QWidget.__init__(self, parent)
+		layout = QtGui.QGridLayout(self)
+
 		i = 0
 		for option in [section[x] for x in section.scalars]:
-			label = QLabel(option.name)
+			label = QtGui.QLabel(option.name) # Display option name
 			layout.addWidget(label, i, 0)
-			valueWidget = WidgetCreator.forOption(option)
+			valueWidget = WidgetCreator.forOption(option) # Create a widget of appropriate type
 			layout.addWidget(valueWidget, i, 1)
 			i += 1
-		layout.addItem(QSpacerItem(0, 0, QSizePolicy.Preferred, QSizePolicy.Expanding), i, 0)
 
-		self.item = item
-		self.conf = section
+		# Add some spacing at the bottom so the layout remains "packed"
+		layout.addItem(QtGui.QSpacerItem(0, 0, QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Expanding), i, 0)
+
+		self.item = item # Store SectionBrowser item corresponding to this page
+		self.conf = section # Store configuration section corresponding to this page
 
 	def restoreDefault(self):
+		"""Restore default value to all widgets on the page"""
 		for widget in [self.layout().itemAt(i) for i in range(self.layout().count())]:
 			try:
 				widget.widget().restoreDefault()
 			except AttributeError: # Skip widgets that can't be restored
 				pass
 
-class SectionBrowser(QWidget):
+class SectionBrowser(QtGui.QWidget):
+	"""TreeView browser of configuration sections. Also manages creating of config pages. It's a bit messy."""
 	def __init__(self, conf, parent=None):
-		QWidget.__init__(self, parent)
-		layout = QVBoxLayout(self)
-		self.tree = QTreeWidget()
+		QtGui.QWidget.__init__(self, parent)
+		layout = QtGui.QVBoxLayout(self)
+
+		# Create treeview
+		self.tree = QtGui.QTreeWidget()
 		self.tree.header().hide()
-		self.tree.currentItemChanged.connect(lambda new,old: self.currentItemChanged.emit(new))
+		self.tree.currentItemChanged.connect(lambda new, old: self.currentItemChanged.emit(new))
 		layout.addWidget(self.tree)
 
-		buttonBox = QWidget()
-		buttonLayout = QHBoxLayout(buttonBox)
-		self.addButton = QPushButton('Add section')
-		self.addButton.setIcon(QIcon.fromTheme('list-add'))
+		# Box that displays add/remove section buttons
+		buttonBox = QtGui.QWidget()
+		buttonLayout = QtGui.QHBoxLayout(buttonBox)
+		self.addButton = QtGui.QPushButton('Add section')
+		self.addButton.setIcon(QtGui.QIcon.fromTheme('list-add'))
 		self.addButton.setEnabled(False)
 		self.addButton.clicked.connect(lambda: self.addEmptySection(self.tree.currentItem()))
 		buttonLayout.addWidget(self.addButton)
 
-		self.removeButton = QPushButton('Remove section')
-		self.removeButton.setIcon(QIcon.fromTheme('list-remove'))
+		self.removeButton = QtGui.QPushButton('Remove section')
+		self.removeButton.setIcon(QtGui.QIcon.fromTheme('list-remove'))
 		self.removeButton.setEnabled(False)
 		buttonLayout.addWidget(self.removeButton)
 		self.removeButton.clicked.connect(lambda: self.removeSection(self.tree.currentItem()))
 		layout.addWidget(buttonBox)
 		self.tree.currentItemChanged.connect(self.activateButtons)
 
-		self.conf = conf
-		self.page_lookup = {}
+		self.conf = conf # Store configuration
+		self.page_lookup = {} # Mappig from treeview item to configuration page
 
-	currentItemChanged = pyqtSignal(QTreeWidgetItem)
-	pageAdded = pyqtSignal(ConfigPage)
-	pageRemoved = pyqtSignal(ConfigPage)
+	# A few signals
+	currentItemChanged = QtCore.pyqtSignal(QtGui.QTreeWidgetItem)
+	pageAdded = QtCore.pyqtSignal(ConfigPage)
+	pageRemoved = QtCore.pyqtSignal(ConfigPage)
 
 	def addSection(self, newsection):
+		"""Take a configuration section and add corresponding page and treeview item"""
 		if newsection.name == None: # Top-level
-			item = QTreeWidgetItem(self.tree, ['Root'])
+			item = QtGui.QTreeWidgetItem(self.tree, ['Root'])
 			self.tree.addTopLevelItem(item)
 		else:
 			parent_item = newsection.parent.tree_item
-			item = QTreeWidgetItem(parent_item, [newsection.name])
+			item = QtGui.QTreeWidgetItem(parent_item, [newsection.name])
 
 		page = ConfigPage(newsection, item)
 		self.pageAdded.emit(page)
@@ -117,12 +136,14 @@ class SectionBrowser(QWidget):
 		return pages
 
 	def activateButtons(self, item):
+		"""Activate add/remove section buttons if appropriate"""
 		page = self.page_lookup[item]
 		conf = page.conf
 		self.addButton.setEnabled(conf.many)
 		self.removeButton.setEnabled(conf.optional)
 
 	def addEmptySection(self, item):
+		"""Add a new empty section based on the spec of the parent section corresponding to item"""
 		parent = self.page_lookup[item].conf # Load combined config for page matching selected item
 		spec = parent.spec['__many__'] # Get spec
 		conf = configobj.ConfigObj(configspec=spec)
@@ -130,13 +151,12 @@ class SectionBrowser(QWidget):
 
 		combined = merge_spec(conf, spec) # Combine spec and new config
 
-		name, ok = QInputDialog.getText(self,'Add new section','Section name:')
+		name, ok = QtGui.QInputDialog.getText(self, 'Add new section', 'Section name:')
 		if ok:
 			name = str(name)
 			combined.name = name
 			combined.parent = parent
 			parent[name] = combined
-
 
 			# Copy new config information into old config
 			# Workaround for ConfigObj issues
@@ -153,6 +173,7 @@ class SectionBrowser(QWidget):
 			self.addSection(combined)
 
 	def removeSection(self, item):
+		"""Delete configuration section corresponding to item"""
 		item.parent().removeChild(item)
 		page = self.page_lookup[item]
 		del page.conf.conf.parent[str(item.text(0))]
@@ -160,62 +181,66 @@ class SectionBrowser(QWidget):
 		del self.page_lookup[item]
 
 
-# Hack to make QScrollArea resize to a suitable size
-class MyScrollArea(QScrollArea):
+class MyScrollArea(QtGui.QScrollArea):
+	"""QtGui.QScrollArea which has a more sensible sizeHint"""
 	def __init__(self, parent=None):
-		QScrollArea.__init__(self, parent)
+		QtGui.QScrollArea.__init__(self, parent)
 	def sizeHint(self):
 		if self.widget() != None:
 			return self.widget().sizeHint()*1.1
 		else:
-			return QSize(10, 10)
+			return QtCore.QSize(10, 10)
 
-# Base for widget with associated validity and restore icons
-class MyWidget(QWidget):
+class MyWidget(QtGui.QWidget):
+	"""Base for widget describing an option"""
 	def __init__(self, option, parent = None):
-		QWidget.__init__(self, parent)
-		self.layout = QHBoxLayout()
+		QtGui.QWidget.__init__(self, parent)
+		self.layout = QtGui.QHBoxLayout()
 		self.setLayout(self.layout)
 		self.option = option
-		self.restoring = False
+		self.onlywidget = False
 
 	def init(self, option, main_widget, change_signal):
+		"""Initialization that has to be performed after some actions made in __init__ in derived classes"""
 		self.main_widget = main_widget
 		self.layout.addWidget(main_widget)
 
 		self.myconnect(change_signal, self.setValue)
 		self.myconnect(change_signal, self.validate)
 
-		self.isValidIcon = QLabel()
+		# Add validity icon
+		self.isValidIcon = QtGui.QLabel()
 		self.isValidIcon.setScaledContents(True)
-		self.isValidIcon.setPixmap(QApplication.style().standardIcon(QStyle.SP_MessageBoxWarning).pixmap(256, 256))
-		self.isValidIcon.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+		self.isValidIcon.setPixmap(QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_MessageBoxWarning).pixmap(256, 256))
+		self.isValidIcon.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
 		self.isValidIcon.setMaximumHeight(self.main_widget.height()*0.8)
 		self.isValidIcon.setMaximumWidth(self.main_widget.height()*0.8)
 		self.isValidIcon.hide()
 		self.layout.addWidget(self.isValidIcon)
 
-		self.restoreDefaultButton = QPushButton(self.style().standardIcon(QStyle.SP_DialogResetButton), '')
-		self.restoreDefaultButton.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+		# Add button to restore default value
+		self.restoreDefaultButton = QtGui.QPushButton(self.style().standardIcon(QtGui.QStyle.SP_DialogResetButton), '')
+		self.restoreDefaultButton.setSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Maximum)
 		self.restoreDefaultButton.clicked.connect(self.restoreDefault)
 		self.restoreDefaultButton.setEnabled(self.option.default != None)
-
 		self.layout.addWidget(self.restoreDefaultButton)
 
 		if option.comment:
 			main_widget.setToolTip(option.comment)
 
+		# Set displayed value if possible
 		try:
 			self.option.get()
 		except KeyError:
 			return
 
 		# No actual change has happened, so prevent the new value from being written to config
-		self.restoring = True
+		self.onlywidget = True
 		self.updateDisplay()
-		self.restoring = False
+		self.onlywidget = False
 
 	def validate(self, value):
+		"""Check if the entered value is valid accoring to the spec"""
 		value = str(value) # Start with a normal string
 		if self.option.type.endswith('list'):
 			value = [x.strip() for x in value.split(',')]
@@ -228,12 +253,14 @@ class MyWidget(QWidget):
 		self.isValidIcon.hide()
 
 	def myconnect(self, signal, func):
+		"""Helper to conenct to both new and old-style signals"""
 		if isinstance(signal, str):
-			QObject.connect(self.main_widget, SIGNAL(signal), func)
+			QtCore.QObject.connect(self.main_widget, QtCore.SIGNAL(signal), func)
 		else:
 			signal.connect(func)
 
 	def setIsDefault(self):
+		"""Tell widget that it represents a default value"""
 		style = ''
 		for widget in ['QCheckBox', 'QSpinBox', 'QDoubleSpinBox', 'QComboBox', 'QLineEdit']:
 			style += '%s {color: gray; font-style: italic}\n'%widget
@@ -241,33 +268,39 @@ class MyWidget(QWidget):
 		self.restoreDefaultButton.setEnabled(False)
 
 	def unsetIsDefault(self):
+		"""Tell widget that it no longer represents a default value"""
 		self.main_widget.setStyleSheet('')
 		self.restoreDefaultButton.setEnabled(self.option.default != None)
 
 	def restoreDefault(self):
+		"""Reset option to default value"""
 		try:
 			self.option.restoreDefault()
 		except KeyError:
 			return
 
-		self.restoring = True
+		self.onlywidget = True
 		self.updateDisplay()
+		self.onlywidget = False
+
 		self.setIsDefault()
-		self.restoring = False
 
 	def updateDisplay(self):
+		"""Update widget after a change in the options"""
 		if self.option.isDefault():
 			self.setIsDefault()
 
 	def setValue(self, value):
-		if not self.restoring:
+		"""Set option value to value"""
+		if not self.onlywidget:
 			self.option.set(value)
 			self.unsetIsDefault()
 
 # Validator to check string length
-class LengthValidator(QValidator):
+class LengthValidator(QtGui.QValidator):
+	"""Validator which enforces string lenght limits"""
 	def __init__(self, min=0, max=None, parent = None):
-		QValidator.__init__(self, parent)
+		QtGui.QValidator.__init__(self, parent)
 		self.min = min
 		self.max = max
 	def fixup(self, input):
@@ -277,17 +310,18 @@ class LengthValidator(QValidator):
 			input.resize(self.max)
 	def validate(self, input, pos):
 		if self.min and input.length() < self.min:
-			return (QValidator.Invalid, pos)
+			return (QtGui.QValidator.Invalid, pos)
 		elif self.max and input.length() > self.max:
-			return (QValidator.Invalid, pos)
+			return (QtGui.QValidator.Invalid, pos)
 		else:
-			return (QValidator.Acceptable, pos)
+			return (QtGui.QValidator.Acceptable, pos)
 
 
 class MyLineEdit(MyWidget):
+	"""Widget representing a text-like option"""
 	def __init__(self, option, min = None, max = None, parent = None):
 		MyWidget.__init__(self, option, parent)
-		main_widget = QLineEdit(self)
+		main_widget = QtGui.QLineEdit(self)
 
 		if min != None:
 			min = int(min)
@@ -302,16 +336,18 @@ class MyLineEdit(MyWidget):
 		self.main_widget.setText(str(self.option.get()))
 
 class MyIpEdit(MyLineEdit):
+	"""Widget representing an IP address"""
 	def __init__(self, option, parent = None):
 		MyLineEdit.__init__(self, option, parent)
 		self.main_widget.setInputMask('000.000.000.000')
-		if option.get() == option.default: # Seems like a bug in QLineEdit. If setInputMask is used, the stylesheet must be set again
+		if option.get() == option.default: # Seems like a bug in QtGui.QLineEdit. If setInputMask is used, the stylesheet must be set again
 			self.setIsDefault()
 
 class MyListEdit(MyWidget):
+	"""Widget representing a list"""
 	def __init__(self, option, min = None, max = None, parent = None):
 		MyWidget.__init__(self, option, parent)
-		main_widget = QLineEdit(self)
+		main_widget = QtGui.QLineEdit(self)
 		self.init(option, main_widget, main_widget.textChanged)
 
 	def updateDisplay(self):
@@ -319,9 +355,10 @@ class MyListEdit(MyWidget):
 		self.main_widget.setText(', '.join([str(x) for x in self.option.get()]))
 
 class MyCheckBox(MyWidget):
+	"""Widget representing a boolean option"""
 	def __init__(self, option, parent=None):
 		MyWidget.__init__(self, option, parent)
-		main_widget = QCheckBox(self)
+		main_widget = QtGui.QCheckBox(self)
 
 		self.init(option, main_widget, main_widget.toggled)
 
@@ -330,22 +367,24 @@ class MyCheckBox(MyWidget):
 		self.main_widget.setChecked(validate.bool_dict[self.option.get()])
 
 class MyComboBox(MyWidget):
+	"""Widget representing a multiple-choice option"""
 	def __init__(self, option, options=[], parent=None):
 		MyWidget.__init__(self, option, parent)
-		main_widget = QComboBox(self)
+		main_widget = QtGui.QComboBox(self)
 		for value in options:
 			main_widget.addItem(str(value))
 
 		self.init(option, main_widget, 'currentIndexChanged(QString)')
 
-	def updateDisplay(self):
+	def updateDisplay(self = False):
 		MyWidget.updateDisplay(self)
 		if self.option.get() != None:
 			self.main_widget.setCurrentIndex(self.main_widget.findText(self.option.get()))
 
-class SliderWithLineEdit(QWidget):
+class SliderWithLineEdit(QtGui.QWidget):
+	"""Slider which displays its current value in a box next to it"""
 	def __init__(self, type, min, max, parent = None):
-		QWidget.__init__(self, parent)
+		QtGui.QWidget.__init__(self, parent)
 		if type == 'float':
 			self.decimals = 2
 		else:
@@ -353,10 +392,10 @@ class SliderWithLineEdit(QWidget):
 
 		self.type = type
 
-		self.layout = QHBoxLayout()
+		self.layout = QtGui.QHBoxLayout()
 		self.setLayout(self.layout)
-		self.slider = QSlider(Qt.Horizontal)
-		self.slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+		self.slider = QtGui.QSlider(QtCore.Qt.Horizontal)
+		self.slider.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Preferred)
 		if type == 'float':
 			min = float(min)*10**self.decimals
 			max = float(max)*10**self.decimals
@@ -366,14 +405,14 @@ class SliderWithLineEdit(QWidget):
 		self.slider.setMinimum(min)
 		self.slider.setMaximum(max)
 		self.layout.addWidget(self.slider)
-		self.edit = QLineEdit(str(self.slider.value()))
-		self.edit.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+		self.edit = QtGui.QLineEdit(str(self.slider.value()))
+		self.edit.setSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Preferred)
 		if type == 'float':
-			self.edit.setValidator(QDoubleValidator(min, max, self.decimals, None)) # Provide parent explicitly (QTBUG-16100)
+			self.edit.setValidator(QtGui.QDoubleValidator(min, max, self.decimals, None)) # Provide parent explicitly (QtGui.QTBUG-16100)
 		else:
-			self.edit.setValidator(QIntValidator(min, max, None)) # Provide parent explicitly (QTBUG-16100)
+			self.edit.setValidator(QtGui.QIntValidator(min, max, None)) # Provide parent explicitly (QtGui.QTBUG-16100)
 		self.layout.addWidget(self.edit)
-		metrics = QFontMetrics(QApplication.font())
+		metrics = QtGui.QFontMetrics(QtGui.QApplication.font())
 		if type == 'float':
 			self.edit.setMaximumWidth(metrics.width(len(str(max))*"8"+"."+"8"))
 		else:
@@ -416,6 +455,7 @@ class SliderWithLineEdit(QWidget):
 
 
 class MySlider(MyWidget):
+	"""Widget representing a number with min and max specified"""
 	def __init__(self, option, min=0, max=100, parent=None):
 		MyWidget.__init__(self, option, parent)
 		main_widget = SliderWithLineEdit(option.type, min, max)
@@ -426,15 +466,16 @@ class MySlider(MyWidget):
 		self.main_widget.setValue(self.option.get())
 
 class MySpinBox(MyWidget):
+	"""Widget representing a number with min or max unspecified"""
 	def __init__(self, option, min=None, max=None, parent=None):
 		self.decimals = 2
 		MyWidget.__init__(self, option, parent)
 		if option.type == 'float':
-			main_widget = QDoubleSpinBox()
+			main_widget = QtGui.QDoubleSpinBox()
 			main_widget.setDecimals(self.decimals)
 			conv = float
 		else:
-			main_widget = QSpinBox()
+			main_widget = QtGui.QSpinBox()
 			if option.default != None:
 				option.default = int(option.default)
 			conv = int
@@ -453,10 +494,11 @@ class MySpinBox(MyWidget):
 		if self.option.get() != None:
 			self.main_widget.setValue(self.option.get())
 
-# Some wrappers to create correct Widget based on type
 class WidgetCreator(object):
+	"""Class containing static methids for creating widgets representing various option types"""
 	@staticmethod
 	def forOption(option):
+		"""Automatically figures out the appropriate widget type"""
 		if option.type.endswith('list'):
 			valueWidget = WidgetCreator.create_widget_list(option, *option.args, **option.kwargs)
 		else:
@@ -465,53 +507,60 @@ class WidgetCreator(object):
 
 	@staticmethod
 	def create_widget_integer(option, min=None, max=None):
+		"""Create widget for integer option"""
 		if min != None and max != None:
 			widget = MySlider(option, min, max)
 		else:
 			widget = MySpinBox(option, min, max)
-
 		return widget
 
 	@staticmethod
 	def create_widget_string(option, min=None, max=None):
+		"""Create widget for string option"""
 		widget = MyLineEdit(option, min, max)
 		return widget
 
 	@staticmethod
 	def create_widget_float(option, min=None, max=None):
+		"""Create widget for float option"""
 		if min != None and max != None:
 			widget = MySlider(option, min, max)
 		else:
 			widget = MySpinBox(option, min, max)
-
 		return widget
 
 	@staticmethod
 	def create_widget_ip_addr(option):
+		"""Create widget for ip_addr option"""
 		widget = MyIpEdit(option)
 		return widget
 
 	@staticmethod
 	def create_widget_boolean(option):
+		"""Create widget for boolean option"""
 		widget = MyCheckBox(option)
 		return widget
 
 	@staticmethod
 	def create_widget_option(option, *options):
+		"""Create widget for option option"""
 		widget = MyComboBox(option, options)
 		return widget
 
 	@staticmethod
 	def create_widget_list(option, min=None, max=None):
+		"""Create widget for any kind of list option"""
 		widget = MyListEdit(option, min, max)
-
 		return widget
 
-class ConfigWindow(QMainWindow):
+class ConfigWindow(QtGui.QMainWindow):
+	"""Window which contains controls for making changes to a ConfigObj"""
+
 	APPLY_IMMEDIATELY = 1 # GNOME style, apply settings immediately
 	APPLY_OK = 2 # KDE style, apply settings when OK is pressed
+
 	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, parent = None):
-		QMainWindow.__init__(self, parent)
+		QtGui.QMainWindow.__init__(self, parent)
 		res = conf.validate(validator, preserve_errors=True)
 
 		# Make changes to a copy of the original conf if needed
@@ -526,11 +575,11 @@ class ConfigWindow(QMainWindow):
 		self.setWindowTitle(title)
 		res = conf.validate(validate.Validator(), preserve_errors=True)
 		options = merge_spec(conf, spec)
-		main = QWidget()
-		layout = QVBoxLayout(main)
+		main = QtGui.QWidget()
+		layout = QtGui.QVBoxLayout(main)
 		self.setCentralWidget(main)
 
-		splitter = QSplitter()
+		splitter = QtGui.QSplitter()
 		layout.addWidget(splitter)
 		self.splitter = splitter
 		browser = SectionBrowser(conf)
@@ -540,15 +589,15 @@ class ConfigWindow(QMainWindow):
 		splitter.addWidget(browser)
 
 		if when_apply == ConfigWindow.APPLY_IMMEDIATELY:
-			buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.RestoreDefaults)
+			buttons = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.RestoreDefaults)
 		elif when_apply == ConfigWindow.APPLY_OK:
-			buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
-		buttons.button(QDialogButtonBox.RestoreDefaults).clicked.connect(self.resetAll)
-		buttons.button(QDialogButtonBox.RestoreDefaults).setIcon(QApplication.style().standardIcon(QStyle.SP_DialogResetButton))
+			buttons = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel | QtGui.QDialogButtonBox.RestoreDefaults)
+		buttons.button(QtGui.QDialogButtonBox.RestoreDefaults).clicked.connect(self.resetAll)
+		buttons.button(QtGui.QDialogButtonBox.RestoreDefaults).setIcon(QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_DialogResetButton))
 
 		if debug: # Show button to print current config as seen from outside
-			dump_config = QPushButton('Dump')
-			buttons.addButton(dump_config, QDialogButtonBox.HelpRole)
+			dump_config = QtGui.QPushButton('Dump')
+			buttons.addButton(dump_config, QtGui.QDialogButtonBox.HelpRole)
 			def dump():
 				print self.original_conf
 			dump_config.clicked.connect(dump)
@@ -565,7 +614,7 @@ class ConfigWindow(QMainWindow):
 		splitter.addWidget(configArea)
 		splitter.setStretchFactor(1, 2)
 
-		stacked = QStackedWidget()
+		stacked = QtGui.QStackedWidget()
 		configArea.setWidget(stacked)
 		splitter.addWidget(configArea)
 		configArea.setWidgetResizable(True)
@@ -596,13 +645,17 @@ class ConfigWindow(QMainWindow):
 		del self.pages[page.item]
 
 def merge_spec(config, spec):
+	"""Combine config and spec into one tree in the form of Option objects"""
 	combined = configobj.ConfigObj()
 
-	combined.optional = '__many__' in spec.parent and spec != spec.parent# Anything in __many__ is optional
+	combined.optional = '__many__' in spec.parent and spec != spec.parent
 	combined.many = '__many__' in spec
+
+	# Store origial conf and spec
 	combined.conf = config
 	combined.spec = spec
 
+	# Recursively combine sections
 	for section in config.sections:
 		if section in spec:
 			combined[section] = merge_spec(config[section], spec[section])
@@ -612,6 +665,7 @@ def merge_spec(config, spec):
 		combined[section].name = section
 		combined[section].parent = combined
 
+	# Combine individual options
 	for option in spec.scalars:
 		comment = spec.inline_comments[option]
 		if comment and comment.startswith('#'):
@@ -646,7 +700,7 @@ if __name__ == '__main__':
 			[[level2]]
 			[other]
 		"""
-		app = QApplication(sys.argv)
+		app = QtGui.QApplication(sys.argv)
 
 		spec = configobj.ConfigObj(spectxt.split('\n'), list_values=False)
 		config = configobj.ConfigObj(configtxt.split('\n'), configspec=spec)
