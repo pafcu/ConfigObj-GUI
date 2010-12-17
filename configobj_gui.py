@@ -52,8 +52,11 @@ class ConfigPage(QWidget):
 		self.conf = section
 
 	def restoreDefault(self):
-		for widget in [self.layout().widget(i) for i in range(self.layout().count())]:
-				widget.restoreDefault()
+		for widget in [self.layout().itemAt(i) for i in range(self.layout().count())]:
+			try:
+				widget.widget().restoreDefault()
+			except AttributeError: # Skip widgets that can't be restored
+				pass
 
 class SectionBrowser(QWidget):
 	def __init__(self, conf, parent=None):
@@ -79,7 +82,7 @@ class SectionBrowser(QWidget):
 		self.removeButton.clicked.connect(lambda: self.removeSection(self.tree.currentItem()))
 		layout.addWidget(buttonBox)
 		self.tree.currentItemChanged.connect(self.activateButtons)
-		
+
 		self.conf = conf
 		self.page_lookup = {}
 
@@ -129,7 +132,11 @@ class SectionBrowser(QWidget):
 			self.addSection(combined)
 
 	def removeSection(self, item):
-		QMessageBox.warning(self,'Not implemented yet!', 'This feafure is not implemented yet')
+		item.parent().removeChild(item)
+		page = self.page_lookup[item]
+		del page.conf.conf.parent[str(item.text(0))]
+		self.pageRemoved.emit(page)
+		del self.page_lookup[item]
 
 
 # Hack to make QScrollArea resize to a suitable size
@@ -376,12 +383,15 @@ class SliderWithLineEdit(QWidget):
 			self.edit.setText(format%(float(i)/float(10**self.decimals)))
 		else:
 			self.edit.setText(str(i))
+	def setValue(self, x):
+		self.setSliderValue(str(x))
+		self.edit.setText(str(x))
 
 class MySlider(MyWidget):
 	def __init__(self, option, min=0, max=100, parent=None):
 		MyWidget.__init__(self, option, parent)
 		main_widget = SliderWithLineEdit(option.type, min, max)
-		main_widget.slider.setValue(int(option.get()))
+		main_widget.setValue(str(option.get()))
 		self.init(option, main_widget, main_widget.edit.textChanged)
 
 	def restoreDefault(self):
@@ -510,6 +520,7 @@ class ConfigWindow(QMainWindow):
 		browser = SectionBrowser(conf)
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
+		browser.pageRemoved.connect(self.removePage)
 		splitter.addWidget(browser)
 
 		if when_apply == ConfigWindow.APPLY_IMMEDIATELY:
@@ -559,11 +570,14 @@ class ConfigWindow(QMainWindow):
 				self.original_conf[key] = self.conf[key]
 
 	def resetAll(self):
-		for page in self.pages:
+		for page in [self.stacked.widget(i) for i in range(self.stacked.count())]:
 			page.restoreDefault()
 
 	def addPage(self, page):
 		self.pages[page.item] = self.stacked.addWidget(page)
+	def removePage(self, page):
+		self.pages[page.item] = self.stacked.removeWidget(page)
+		del self.pages[page.item]
 
 def merge_spec(config, spec):
 	combined = configobj.ConfigObj()
