@@ -124,6 +124,7 @@ class SectionBrowser(QtGui.QWidget):
 		else:
 			parent_item = newsection.parent.tree_item
 			item = QtGui.QTreeWidgetItem(parent_item, [newsection.name])
+		item.setExpanded(True)
 
 		page = ConfigPage(newsection, item)
 		self.pageAdded.emit(page)
