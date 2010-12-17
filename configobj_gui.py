@@ -20,7 +20,7 @@ class Option(object):
 		self.default = default
 		self.comment = comment
 	def get(self):
-		return self.section.get(self.name, None)
+		return self.section[self.name]
 	def set(self, value):
 		# Workaround for problem in validate with lists from string
 		value = str(value) # Start with a normal string
@@ -32,6 +32,13 @@ class Option(object):
 			pass
 	def __repr__(self):
 		return 'Option(%s,%s,%s,%s,%s,%s,%s)'%(self.name, self.section, self.type, self.args, self.kwargs, self.default, self.comment)
+
+	def restoreDefault(self):
+		self.section.restore_default(self.name)
+
+
+	def isDefault(self):
+		return self.name in self.section.defaults
 
 
 class ConfigPage(QWidget):
@@ -127,8 +134,11 @@ class SectionBrowser(QWidget):
 		if ok:
 			name = str(name)
 			combined.name = name
+			conf.name = name
 			parent[name] = combined
-			parent.conf[name] = conf
+			parent.conf[name] = {}
+			for key in conf:
+				parent.conf[name][key] = conf[key]
 			self.addSection(combined)
 
 	def removeSection(self, item):
@@ -156,13 +166,13 @@ class MyWidget(QWidget):
 		self.layout = QHBoxLayout()
 		self.setLayout(self.layout)
 		self.option = option
+		self.restoring = False
 
 	def init(self, option, main_widget, change_signal):
 		self.main_widget = main_widget
 		self.layout.addWidget(main_widget)
 
-		self.myconnect(change_signal, lambda x: self.unsetIsDefault())
-		self.myconnect(change_signal, option.set)
+		self.myconnect(change_signal, self.setValue)
 		self.myconnect(change_signal, self.validate)
 
 		self.isValidIcon = QLabel()
@@ -181,11 +191,18 @@ class MyWidget(QWidget):
 
 		self.layout.addWidget(self.restoreDefaultButton)
 
-		if option.default != None and (option.get() == None or option.get() == validator.functions[option.type](option.default)):
-			self.setIsDefault()
-
 		if option.comment:
 			main_widget.setToolTip(option.comment)
+
+		try:
+			self.option.get()
+		except KeyError:
+			return
+
+		# No actual change has happened, so prevent the new value from being written to config
+		self.restoring = True
+		self.updateDisplay()
+		self.restoring = False
 
 	def validate(self, value):
 		value = str(value) # Start with a normal string
@@ -217,7 +234,24 @@ class MyWidget(QWidget):
 		self.restoreDefaultButton.setEnabled(self.option.default != None)
 
 	def restoreDefault(self):
-		pass
+		try:
+			self.option.restoreDefault()
+		except KeyError:
+			return
+
+		self.restoring = True
+		self.updateDisplay()
+		self.setIsDefault()
+		self.restoring = False
+
+	def updateDisplay(self):
+		if self.option.isDefault():
+			self.setIsDefault()
+
+	def setValue(self, value):
+		if not self.restoring:
+			self.option.set(value)
+			self.unsetIsDefault()
 
 # Validator to check string length
 class LengthValidator(QValidator):
@@ -242,11 +276,7 @@ class LengthValidator(QValidator):
 class MyLineEdit(MyWidget):
 	def __init__(self, option, min = None, max = None, parent = None):
 		MyWidget.__init__(self, option, parent)
-		realvalue = option.get()
-		if realvalue == None:
-			main_widget = QLineEdit(self)
-		else:
-			main_widget = QLineEdit(str(realvalue), self)
+		main_widget = QLineEdit(self)
 
 		if min != None:
 			min = int(min)
@@ -256,9 +286,9 @@ class MyLineEdit(MyWidget):
 
 		self.init(option, main_widget, main_widget.textChanged)
 
-	def restoreDefault(self):
-		self.main_widget.setText(self.option.default)
-		self.setIsDefault()
+	def updateDisplay(self):
+		MyWidget.updateDisplay(self)
+		self.main_widget.setText(str(self.option.get()))
 
 class MyIpEdit(MyLineEdit):
 	def __init__(self, option, parent = None):
@@ -270,29 +300,23 @@ class MyIpEdit(MyLineEdit):
 class MyListEdit(MyWidget):
 	def __init__(self, option, min = None, max = None, parent = None):
 		MyWidget.__init__(self, option, parent)
-		realvalue = option.get()
-		if realvalue == None:
-			main_widget = QLineEdit()
-		else:
-			main_widget = QLineEdit(', '.join([str(x) for x in realvalue]), self)
+		main_widget = QLineEdit(self)
 		self.init(option, main_widget, main_widget.textChanged)
-	def restoreDefault(self):
-		self.main_widget.setText(', '.join(self.option.default))
-		self.setIsDefault()
+
+	def updateDisplay(self):
+		MyWidget.updateDisplay(self)
+		self.main_widget.setText(', '.join([str(x) for x in self.option.get()]))
 
 class MyCheckBox(MyWidget):
 	def __init__(self, option, parent=None):
 		MyWidget.__init__(self, option, parent)
 		main_widget = QCheckBox(self)
 
-		if option.get() != None:
-			main_widget.setChecked(option.get())
-
 		self.init(option, main_widget, main_widget.toggled)
 
-	def restoreDefault(self):
-		self.main_widget.setChecked(validate.bool_dict[self.option.default.lower()])
-		self.setIsDefault()
+	def updateDisplay(self):
+		MyWidget.updateDisplay(self)
+		self.main_widget.setChecked(validate.bool_dict[self.option.get()])
 
 class MyComboBox(MyWidget):
 	def __init__(self, option, options=[], parent=None):
@@ -300,22 +324,13 @@ class MyComboBox(MyWidget):
 		main_widget = QComboBox(self)
 		for value in options:
 			main_widget.addItem(str(value))
-		selected = -1
-		if option.get() != None: # Try setting the correct value
-			selected = main_widget.findText(option.get())
-		elif selected == -1 and option.default != None: # If no value or it's invalid
-			selected = main_widget.findText(option.default)
-		else: # No value, no default
-			main_widget.insertItem(0, '')
-			selected = 0
-
-		main_widget.setCurrentIndex(selected)
 
 		self.init(option, main_widget, 'currentIndexChanged(QString)')
 
-	def restoreDefault(self):
-		self.main_widget.setCurrentIndex(self.main_widget.findText(self.option.default))
-		self.setIsDefault()
+	def updateDisplay(self):
+		MyWidget.updateDisplay(self)
+		if self.option.get() != None:
+			self.main_widget.setCurrentIndex(self.main_widget.findText(self.option.get()))
 
 class SliderWithLineEdit(QWidget):
 	def __init__(self, type, min, max, parent = None):
@@ -383,21 +398,21 @@ class SliderWithLineEdit(QWidget):
 			self.edit.setText(format%(float(i)/float(10**self.decimals)))
 		else:
 			self.edit.setText(str(i))
-	def setValue(self, x):
-		self.setSliderValue(str(x))
-		self.edit.setText(str(x))
+
+	def setValue(self, value):
+		self.setSliderValue(str(value))
+		self.edit.setText(str(value))
+
 
 class MySlider(MyWidget):
 	def __init__(self, option, min=0, max=100, parent=None):
 		MyWidget.__init__(self, option, parent)
 		main_widget = SliderWithLineEdit(option.type, min, max)
-		main_widget.setValue(str(option.get()))
 		self.init(option, main_widget, main_widget.edit.textChanged)
 
-	def restoreDefault(self):
-		self.main_widget.setSliderValue(self.option.default)
-		self.main_widget.setEditValue(self.main_widget.slider.value())
-		self.setIsDefault()
+	def updateDisplay(self):
+		MyWidget.updateDisplay(self)
+		self.main_widget.setValue(self.option.get())
 
 class MySpinBox(MyWidget):
 	def __init__(self, option, min=None, max=None, parent=None):
@@ -420,17 +435,12 @@ class MySpinBox(MyWidget):
 		if max != None:
 			main_widget.setMaximum(conv(max))
 
-		if option.get() == None:
-			main_widget.setValue(0)
-		else:
-			main_widget.setValue(conv(option.get()))
-
 		self.init(option, main_widget, main_widget.valueChanged)
 
-	def restoreDefault(self):
-		if self.option.default != None:
-			self.main_widget.setValue(self.option.default)
-			self.setIsDefault()
+	def updateDisplay(self):
+		MyWidget.updateDisplay(self)
+		if self.option.get() != None:
+			self.main_widget.setValue(self.option.get())
 
 # Some wrappers to create correct Widget based on type
 class WidgetCreator(object):
@@ -444,7 +454,6 @@ class WidgetCreator(object):
 
 	@staticmethod
 	def create_widget_integer(option, min=None, max=None):
-		realvalue = option.get()
 		if min != None and max != None:
 			widget = MySlider(option, min, max)
 		else:
@@ -459,13 +468,11 @@ class WidgetCreator(object):
 
 	@staticmethod
 	def create_widget_float(option, min=None, max=None):
-		realvalue = option.get()
 		if min != None and max != None:
 			widget = MySlider(option, min, max)
 		else:
 			widget = MySpinBox(option, min, max)
 
-		return widget
 		return widget
 
 	@staticmethod
@@ -480,8 +487,6 @@ class WidgetCreator(object):
 
 	@staticmethod
 	def create_widget_option(option, *options):
-		if option.default == None:
-			option.default = options[0]
 		widget = MyComboBox(option, options)
 		return widget
 
@@ -559,7 +564,6 @@ class ConfigWindow(QMainWindow):
 		self.pages = {}
 		pages = browser.addSection(options)
 
-
 	def changePage(self, newItem):
 		index = self.pages[newItem]
 		self.stacked.setCurrentIndex(index)
@@ -567,7 +571,8 @@ class ConfigWindow(QMainWindow):
 	def updateOriginalConf(self):
 		if self.original_conf:
 			for key in self.conf:
-				self.original_conf[key] = self.conf[key]
+				if key not in self.conf.defaults:
+					self.original_conf[key] = self.conf[key]
 
 	def resetAll(self):
 		for page in [self.stacked.widget(i) for i in range(self.stacked.count())]:
@@ -611,7 +616,7 @@ if __name__ == '__main__':
 			mystring = string(default='foo',min=2,max=10) # A string
 			myinteger = integer(default=4, min=-2, max=10) # A integer with min and max
 			myinteger2 = integer(default=2, min=-1) # A integer with min but no max
-			myoption = option(bar,baz) # Options
+			myoption = option(default='baz','bar','baz') # Options
 			myip = ip_addr(default='127.0.0.1') # An IP address
 			mylist = list(default=list('a','b')) # A list
 			myintlist = int_list(default=list(1,2)) # A list of integers
@@ -625,7 +630,6 @@ if __name__ == '__main__':
 			enabled = boolean(default=True)
 		"""
 		configtxt = """
-			nondefault = 4
 			notinspec = foo
 			[section]
 			[[level2]]
@@ -639,6 +643,6 @@ if __name__ == '__main__':
 		wnd = ConfigWindow(config, spec, when_apply=ConfigWindow.APPLY_IMMEDIATELY, debug=True)
 		wnd.show()
 		app.exec_()
-		print config
+		print '\n'.join(config.write())
 
 	main()
