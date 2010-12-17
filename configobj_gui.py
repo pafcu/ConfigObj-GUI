@@ -587,7 +587,8 @@ class ConfigWindow(QtGui.QMainWindow):
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
 		browser.pageRemoved.connect(self.removePage)
-		splitter.addWidget(browser)
+		if spec.sections != []: # Sections are possible
+			splitter.addWidget(browser)
 
 		if when_apply == ConfigWindow.APPLY_IMMEDIATELY:
 			buttons = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.RestoreDefaults)
