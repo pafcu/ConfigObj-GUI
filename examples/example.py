@@ -1,3 +1,4 @@
+import sys
 import os
 from PyQt4 import QtGui
 import configobj
@@ -12,8 +13,8 @@ def main():
 	config = configobj.ConfigObj(conffile, configspec=spec)
 
 	# Instead of creating a ConfigWindow we spawn an external process (will block)
-	app = QtGui.QApplication()
-	wnd = configobj_gui.ConfigWindow(conf, spec)
+	app = QtGui.QApplication(sys.argv)
+	wnd = configobj_gui.ConfigWindow(config, spec)
 	wnd.show()
 	app.exec_()
 	print config
