@@ -49,6 +49,7 @@ class ConfigPage(QWidget):
 		layout.addItem(QSpacerItem(0, 0, QSizePolicy.Preferred, QSizePolicy.Expanding), i, 0)
 
 		self.item = item
+		self.conf = section
 
 	def restoreDefault(self):
 		for widget in [self.layout().widget(i) for i in range(self.layout().count())]:
@@ -61,30 +62,75 @@ class SectionBrowser(QWidget):
 		self.tree = QTreeWidget()
 		self.tree.header().hide()
 		self.tree.currentItemChanged.connect(lambda new,old: self.currentItemChanged.emit(new))
-		
 		layout.addWidget(self.tree)
+
+		buttonBox = QWidget()
+		buttonLayout = QHBoxLayout(buttonBox)
+		self.addButton = QPushButton('Add section')
+		self.addButton.setIcon(QIcon.fromTheme('list-add'))
+		self.addButton.setEnabled(False)
+		self.addButton.clicked.connect(lambda: self.addEmptySection(self.tree.currentItem()))
+		buttonLayout.addWidget(self.addButton)
+
+		self.removeButton = QPushButton('Remove section')
+		self.removeButton.setIcon(QIcon.fromTheme('list-remove'))
+		self.removeButton.setEnabled(False)
+		buttonLayout.addWidget(self.removeButton)
+		self.removeButton.clicked.connect(lambda: self.removeSection(self.tree.currentItem()))
+		layout.addWidget(buttonBox)
+		self.tree.currentItemChanged.connect(self.activateButtons)
 		
-		self.treeitemlookup = {}
 		self.conf = conf
+		self.page_lookup = {}
 
 	currentItemChanged = pyqtSignal(QTreeWidgetItem)
+	pageAdded = pyqtSignal(ConfigPage)
+	pageRemoved = pyqtSignal(ConfigPage)
 
 	def addSection(self, newsection):
 		if newsection.name == None: # Top-level
 			item = QTreeWidgetItem(self.tree, ['Root'])
 			self.tree.addTopLevelItem(item)
 		else:
-			parent_item = self.treeitemlookup[id(newsection.parent)]
+			parent_item = newsection.parent.tree_item
 			item = QTreeWidgetItem(parent_item, [newsection.name])
 
 		page = ConfigPage(newsection, item)
-		self.treeitemlookup[id(newsection)] = item
+		self.pageAdded.emit(page)
+		newsection.tree_item = item
+		self.page_lookup[item] = page
 
 		pages = [page]
 		for section in [newsection[x] for x in newsection.sections]:
 			pages.extend(self.addSection(section))
 
 		return pages
+
+	def activateButtons(self, item):
+		page = self.page_lookup[item]
+		conf = page.conf
+		self.addButton.setEnabled(conf.many)
+		self.removeButton.setEnabled(conf.optional)
+
+	def addEmptySection(self, item):
+		parent = self.page_lookup[item].conf
+		spec = parent.spec['__many__']
+		conf = configobj.ConfigObj(configspec=spec)
+		conf.validate(validator)
+		combined = merge_spec(conf,spec)
+		combined.parent = parent
+
+		name, ok = QInputDialog.getText(self,'Add new section','Section name:')
+		if ok:
+			name = str(name)
+			combined.name = name
+			parent[name] = combined
+			parent.conf[name] = conf
+			self.addSection(combined)
+
+	def removeSection(self, item):
+		QMessageBox.warning(self,'Not implemented yet!', 'This feafure is not implemented yet')
+
 
 # Hack to make QScrollArea resize to a suitable size
 class MyScrollArea(QScrollArea):
@@ -363,7 +409,12 @@ class MySpinBox(MyWidget):
 			main_widget.setMinimum(conv(min))
 		if max != None:
 			main_widget.setMaximum(conv(max))
-		main_widget.setValue(conv(option.get()))
+
+		if option.get() == None:
+			main_widget.setValue(0)
+		else:
+			main_widget.setValue(conv(option.get()))
+
 		self.init(option, main_widget, main_widget.valueChanged)
 
 	def restoreDefault(self):
@@ -435,7 +486,7 @@ class ConfigWindow(QMainWindow):
 	APPLY_OK = 2 # KDE style, apply settings when OK is pressed
 	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, parent = None):
 		QMainWindow.__init__(self, parent)
-		res = conf.validate(validate.Validator(), preserve_errors=True)
+		res = conf.validate(validator, preserve_errors=True)
 
 		# Make changes to a copy of the original conf if needed
 		if when_apply != ConfigWindow.APPLY_IMMEDIATELY:
@@ -457,6 +508,8 @@ class ConfigWindow(QMainWindow):
 		layout.addWidget(splitter)
 		self.splitter = splitter
 		browser = SectionBrowser(conf)
+		browser.currentItemChanged.connect(self.changePage)
+		browser.pageAdded.connect(self.addPage)
 		splitter.addWidget(browser)
 
 		if when_apply == ConfigWindow.APPLY_IMMEDIATELY:
@@ -494,10 +547,7 @@ class ConfigWindow(QMainWindow):
 
 		self.pages = {}
 		pages = browser.addSection(options)
-		for page in pages:
-			self.pages[page.item] = self.stacked.addWidget(page)
 
-		browser.currentItemChanged.connect(self.changePage)
 
 	def changePage(self, newItem):
 		index = self.pages[newItem]
@@ -512,21 +562,33 @@ class ConfigWindow(QMainWindow):
 		for page in self.pages:
 			page.restoreDefault()
 
+	def addPage(self, page):
+		self.pages[page.item] = self.stacked.addWidget(page)
+
 def merge_spec(config, spec):
 	combined = configobj.ConfigObj()
+
+	combined.optional = '__many__' in spec.parent and spec != spec.parent# Anything in __many__ is optional
+	combined.many = '__many__' in spec
+	combined.conf = config
+	combined.spec = spec
+
 	for section in config.sections:
 		if section in spec:
 			combined[section] = merge_spec(config[section], spec[section])
 		elif '__many__' in spec:
 			combined[section] = merge_spec(config[section], spec['__many__'])
+
 		combined[section].name = section
 		combined[section].parent = combined
+
 	for option in spec.scalars:
 		comment = spec.inline_comments[option]
 		if comment and comment.startswith('#'):
 			comment = comment[1:].strip()
 		fun_name, fun_args, fun_kwargs, default = validator._parse_with_caching(spec[option]) # WARNING: Uses unoffical method!
 		combined[option] = Option(option, config, fun_name, fun_args, fun_kwargs, default, comment)
+
 	return combined
 
 if __name__ == '__main__':
@@ -560,7 +622,7 @@ if __name__ == '__main__':
 		spec = configobj.ConfigObj(spectxt.split('\n'), list_values=False)
 		config = configobj.ConfigObj(configtxt.split('\n'), configspec=spec)
 
-		wnd = ConfigWindow(config, spec, when_apply=ConfigWindow.APPLY_IMMEDIATELY)
+		wnd = ConfigWindow(config, spec, when_apply=ConfigWindow.APPLY_IMMEDIATELY, debug=True)
 		wnd.show()
 		app.exec_()
 		print config
