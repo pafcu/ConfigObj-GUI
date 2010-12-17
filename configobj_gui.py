@@ -60,6 +60,7 @@ class ConfigPage(QtGui.QWidget):
 		i = 0
 		for option in [section[x] for x in section.scalars]:
 			label = QtGui.QLabel(option.name) # Display option name
+			label.setSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Preferred)
 			layout.addWidget(label, i, 0)
 			valueWidget = WidgetCreator.forOption(option) # Create a widget of appropriate type
 			layout.addWidget(valueWidget, i, 1)
