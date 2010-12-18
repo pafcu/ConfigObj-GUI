@@ -226,6 +226,7 @@ class MyWidget(QtGui.QWidget):
 		self.restoreDefaultButton.setSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Maximum)
 		self.restoreDefaultButton.clicked.connect(self.restoreDefault)
 		self.restoreDefaultButton.setEnabled(self.option.default != None)
+		self.restoreDefaultButton.setToolTip('Restore default value')
 		self.layout.addWidget(self.restoreDefaultButton)
 
 		if option.comment:
