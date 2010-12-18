@@ -684,16 +684,10 @@ def merge_spec(config, spec):
 def configure_externally(config, spec):
 	"""Launch a ConfigWindow in an external process"""
 	import cPickle, subprocess, time
-	while 1:
-		try:
-			proc = subprocess.Popen([__file__], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-			break
-		except OSError, e:
-			if e.errno == 13:
-				time.sleep(0.1)
-			else:
-				raise e
-	time.sleep(0.5)
+	path = __file__
+	if path.endswith('.pyc'):
+		path = path[:-1]
+	proc = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 	newconf = cPickle.loads(proc.communicate(cPickle.dumps((config, spec)))[0])
 	newconf.write(sys.stdout)
 
