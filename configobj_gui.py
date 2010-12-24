@@ -119,6 +119,8 @@ class SectionBrowser(QtGui.QWidget):
 	currentItemChanged = QtCore.pyqtSignal(QtGui.QTreeWidgetItem)
 	pageAdded = QtCore.pyqtSignal(ConfigPage)
 	pageRemoved = QtCore.pyqtSignal(ConfigPage)
+	sectionAdded = QtCore.pyqtSignal(configobj.Section)
+	sectionRemoved = QtCore.pyqtSignal(configobj.Section)
 
 	def addSection(self, newsection):
 		"""Take a configuration section and add corresponding page and treeview item"""
@@ -177,11 +179,13 @@ class SectionBrowser(QtGui.QWidget):
 					fix_depth(conf[key])
 
 			self.addSection(combined)
+			self.sectionAdded.emit(combined)
 
 	def removeSection(self, item):
 		"""Delete configuration section corresponding to item"""
 		item.parent().removeChild(item)
 		page = self.page_lookup[item]
+		self.sectionRemoved.emit(page.conf)
 		del page.conf.conf.parent[str(item.text(0))]
 		self.pageRemoved.emit(page)
 		del self.page_lookup[item]
@@ -597,6 +601,9 @@ class ConfigWindow(QtGui.QMainWindow):
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
 		browser.pageRemoved.connect(self.removePage)
+		browser.sectionAdded.connect(self.sectionAdded.emit)
+		browser.sectionRemoved.connect(self.sectionRemoved.emit)
+
 		if spec.sections != []: # Sections are possible
 			splitter.addWidget(browser)
 
@@ -638,9 +645,18 @@ class ConfigWindow(QtGui.QMainWindow):
 		if debug:
 			def printChange(option):
 				print '%s in %s changed to %s'%(option.name, option.section.name, option.get()) 
+			def printSectionAdded(section):
+				print 'Added section %s'%(section.name)
+			def printSectionRemoved(section):
+				print 'Removed section %s, %s'%(section.name)
+
 			self.optionChanged.connect(printChange)
+			self.sectionAdded.connect(printSectionAdded)
+			self.sectionRemoved.connect(printSectionRemoved)
 
 	optionChanged = QtCore.pyqtSignal(Option)
+	sectionAdded = QtCore.pyqtSignal(configobj.Section)
+	sectionRemoved = QtCore.pyqtSignal(configobj.Section)
 
 	def changePage(self, newItem):
 		index = self.pages[newItem]
