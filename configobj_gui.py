@@ -63,6 +63,7 @@ class ConfigPage(QtGui.QWidget):
 			label.setSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Preferred)
 			layout.addWidget(label, i, 0)
 			valueWidget = WidgetCreator.forOption(option) # Create a widget of appropriate type
+			valueWidget.optionChanged.connect(self.optionChanged.emit) 
 			layout.addWidget(valueWidget, i, 1)
 			i += 1
 
@@ -71,6 +72,8 @@ class ConfigPage(QtGui.QWidget):
 
 		self.item = item # Store SectionBrowser item corresponding to this page
 		self.conf = section # Store configuration section corresponding to this page
+
+	optionChanged = QtCore.pyqtSignal(Option) # Chain signal upwards
 
 	def restoreDefault(self):
 		"""Restore default value to all widgets on the page"""
@@ -288,16 +291,20 @@ class MyWidget(QtGui.QWidget):
 		self.onlywidget = False
 
 		self.setIsDefault()
+		self.optionChanged.emit(self.option)
 
 	def updateDisplay(self):
 		"""Update widget after a change in the options"""
 		if self.option.isDefault():
 			self.setIsDefault()
 
+	optionChanged = QtCore.pyqtSignal(Option)
+
 	def setValue(self, value):
 		"""Set option value to value"""
 		if not self.onlywidget:
 			self.option.set(value)
+			self.optionChanged.emit(self.option)
 			self.unsetIsDefault()
 
 # Validator to check string length
@@ -628,6 +635,12 @@ class ConfigWindow(QtGui.QMainWindow):
 
 		self.pages = {}
 		pages = browser.addSection(options)
+		if debug:
+			def printChange(option):
+				print '%s in %s changed to %s'%(option.name, option.section.name, option.get()) 
+			self.optionChanged.connect(printChange)
+
+	optionChanged = QtCore.pyqtSignal(Option)
 
 	def changePage(self, newItem):
 		index = self.pages[newItem]
@@ -645,6 +658,8 @@ class ConfigWindow(QtGui.QMainWindow):
 
 	def addPage(self, page):
 		self.pages[page.item] = self.stacked.addWidget(page)
+		page.optionChanged.connect(self.optionChanged.emit)
+
 	def removePage(self, page):
 		self.pages[page.item] = self.stacked.removeWidget(page)
 		del self.pages[page.item]
