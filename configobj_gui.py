@@ -576,6 +576,8 @@ class ConfigWindow(QtGui.QMainWindow):
 
 	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, parent = None):
 		QtGui.QMainWindow.__init__(self, parent)
+		self.when_apply = when_apply
+
 		res = conf.validate(validator, preserve_errors=True)
 
 		# Make changes to a copy of the original conf if needed
@@ -590,6 +592,7 @@ class ConfigWindow(QtGui.QMainWindow):
 		self.setWindowTitle(title)
 		res = conf.validate(validate.Validator(), preserve_errors=True)
 		options = merge_spec(conf, spec)
+		self.options = options
 		main = QtGui.QWidget()
 		layout = QtGui.QVBoxLayout(main)
 		self.setCentralWidget(main)
@@ -601,8 +604,10 @@ class ConfigWindow(QtGui.QMainWindow):
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
 		browser.pageRemoved.connect(self.removePage)
-		browser.sectionAdded.connect(self.sectionAdded.emit)
-		browser.sectionRemoved.connect(self.sectionRemoved.emit)
+
+		if when_apply == ConfigWindow.APPLY_IMMEDIATELY: 
+			browser.sectionAdded.connect(self.sectionAdded.emit)
+			browser.sectionRemoved.connect(self.sectionRemoved.emit)
 
 		if spec.sections != []: # Sections are possible
 			splitter.addWidget(browser)
@@ -642,17 +647,7 @@ class ConfigWindow(QtGui.QMainWindow):
 
 		self.pages = {}
 		pages = browser.addSection(options)
-		if debug:
-			def printChange(option):
-				print '%s in %s changed to %s'%(option.name, option.section.name, option.get()) 
-			def printSectionAdded(section):
-				print 'Added section %s'%(section.name)
-			def printSectionRemoved(section):
-				print 'Removed section %s, %s'%(section.name)
 
-			self.optionChanged.connect(printChange)
-			self.sectionAdded.connect(printSectionAdded)
-			self.sectionRemoved.connect(printSectionRemoved)
 
 	optionChanged = QtCore.pyqtSignal(Option)
 	sectionAdded = QtCore.pyqtSignal(configobj.Section)
@@ -663,10 +658,48 @@ class ConfigWindow(QtGui.QMainWindow):
 		self.stacked.setCurrentIndex(index)
 
 	def updateOriginalConf(self):
-		if self.original_conf:
-			for key in self.conf:
-				if key not in self.conf.defaults:
-					self.original_conf[key] = self.conf[key]
+		if self.when_apply != ConfigWindow.APPLY_IMMEDIATELY: # Check what has changed
+			def update(new, old, newly_added):
+				added = [x for x in new.sections if x not in old.sections]
+				for section in added:
+					if not newly_added:
+						self.sectionAdded.emit(new[section])
+					old[section] = {}
+
+				removed = [x for x in old.sections if x not in new.conf.sections]
+				for section in removed:
+					self.sectionRemoved.emit(new[section])
+					del old[section]
+
+				for scalar in new.scalars:
+					# New section
+					if not scalar in old.scalars:
+						if not new[scalar].isDefault():
+							try:
+								old[scalar] = new[scalar].get()
+								self.optionChanged.emit(new[scalar])
+							except KeyError:
+								continue
+					else: # Old section
+						try:
+							if new[scalar].get() != old[scalar]:
+								self.optionChanged.emit(new[scalar])
+						except KeyError:
+							continue
+
+						if not new[scalar].isDefault():
+							old[scalar] = new[scalar].get()
+						else:
+							old.restore_default(scalar)
+
+				for section in [x for x in new.sections]:
+					try:
+						update(new[section],old[section], newly_added or section in added)
+					except KeyError: # Section was removed
+						continue
+
+			update(self.options,self.original_conf,False)
+				
 
 	def resetAll(self):
 		for page in [self.stacked.widget(i) for i in range(self.stacked.count())]:
@@ -674,7 +707,8 @@ class ConfigWindow(QtGui.QMainWindow):
 
 	def addPage(self, page):
 		self.pages[page.item] = self.stacked.addWidget(page)
-		page.optionChanged.connect(self.optionChanged.emit)
+		if self.when_apply == ConfigWindow.APPLY_IMMEDIATELY:
+			page.optionChanged.connect(self.optionChanged.emit)
 
 	def removePage(self, page):
 		self.pages[page.item] = self.stacked.removeWidget(page)
