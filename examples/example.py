@@ -3,6 +3,7 @@ import os
 from PyQt4 import QtGui
 import configobj
 import configobj_gui
+import validate
 
 def main():
 	datadir = os.path.dirname(__file__)
@@ -14,7 +15,8 @@ def main():
 
 	# Instead of creating a ConfigWindow we spawn an external process (will block)
 	app = QtGui.QApplication(sys.argv)
-	wnd = configobj_gui.ConfigWindow(config, spec, when_apply=configobj_gui.ConfigWindow.APPLY_OK)
+	validator = validate.Validator()
+	wnd = configobj_gui.ConfigWindow(config, spec, when_apply=configobj_gui.ConfigWindow.APPLY_OK, type_mapping={'mytype':(configobj_gui.create_widget_string, validate.is_integer)})
 	wnd.show()
 	def printChange(option):
 		print '%s in %s changed to %s'%(option.name, option.section.name, option.get()) 

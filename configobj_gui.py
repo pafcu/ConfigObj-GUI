@@ -5,16 +5,12 @@ import copy
 import configobj
 import validate
 
-#from PyQt4.QtGui import *
-#from PyQt4.QtCore import *
 from PyQt4 import QtGui
 from PyQt4 import QtCore
 
-validator = validate.Validator()
-
 class Option(object):
 	"""Description and value of an option"""
-	def __init__(self, name, section, type, args, kwargs, default, comment):
+	def __init__(self, name, section, type, args, kwargs, default, comment, widget_maker, check):
 		self.name = name
 		self.section = section
 		self.type = type
@@ -22,6 +18,8 @@ class Option(object):
 		self.kwargs = kwargs
 		self.default = default
 		self.comment = comment
+		self.check = check
+		self.widget_maker = widget_maker
 
 	def get(self):
 		"""Get current value of the option"""
@@ -34,7 +32,7 @@ class Option(object):
 		if self.type.endswith('list'):
 			value = [x.strip() for x in value.split(',')]
 		try:
-			self.section[self.name] = validator.functions[self.type](value, *self.args, **self.kwargs)
+			self.section[self.name] = self.check(value, *self.args, **self.kwargs)
 		except:
 			pass
 
@@ -50,15 +48,18 @@ class Option(object):
 		"""Check whether the option has the default value"""
 		return self.name in self.section.defaults
 
+	def widget(self):
+			return self.widget_maker(self)
+
 
 class ConfigPage(QtGui.QWidget):
 	"""Container for widgets describing options in a section"""
-	def __init__(self, section, item, widget_mapping, parent=None):
+	def __init__(self, section, item, parent=None):
 		QtGui.QWidget.__init__(self, parent)
 		layout = QtGui.QFormLayout(self)
 
 		for option in [section[x] for x in section.scalars]:
-			valueWidget = widget_mapping[option.type](option)
+			valueWidget = option.widget()
 			valueWidget.optionChanged.connect(self.optionChanged.emit) 
 			layout.addRow(option.name, valueWidget)
 
@@ -77,10 +78,10 @@ class ConfigPage(QtGui.QWidget):
 
 class SectionBrowser(QtGui.QWidget):
 	"""TreeView browser of configuration sections. Also manages creating of config pages. It's a bit messy."""
-	def __init__(self, conf, widget_mapping, parent=None):
+	def __init__(self, conf, validator, parent=None):
 		QtGui.QWidget.__init__(self, parent)
 		layout = QtGui.QVBoxLayout(self)
-		self.widget_mapping = widget_mapping
+		self.validator = validator
 
 		# Create treeview
 		self.tree = QtGui.QTreeWidget()
@@ -125,7 +126,7 @@ class SectionBrowser(QtGui.QWidget):
 			item = QtGui.QTreeWidgetItem(parent_item, [newsection.name])
 		item.setExpanded(True)
 
-		page = ConfigPage(newsection, item, self.widget_mapping)
+		page = ConfigPage(newsection, item)
 		self.pageAdded.emit(page)
 		newsection.tree_item = item
 		self.page_lookup[item] = page
@@ -148,9 +149,9 @@ class SectionBrowser(QtGui.QWidget):
 		parent = self.page_lookup[item].conf # Load combined config for page matching selected item
 		spec = parent.spec['__many__'] # Get spec
 		conf = configobj.ConfigObj(configspec=spec)
-		conf.validate(validator) # Create an empty config matching spec
+		conf.validate(self.validator) # Create an empty config matching spec
 
-		combined = merge_spec(conf, spec) # Combine spec and new config
+		combined = merge_spec(conf, spec, self.type_mapping) # Combine spec and new config
 
 		name, ok = QtGui.QInputDialog.getText(self, 'Add new section', 'Section name:')
 		if ok:
@@ -250,7 +251,7 @@ class MyWidget(QtGui.QWidget):
 		if self.option.type.endswith('list'):
 			value = [x.strip() for x in value.split(',')]
 		try:
-			validator.functions[self.option.type](value, *self.option.args, **self.option.kwargs)
+			self.option.check(value, *self.option.args, **self.option.kwargs)
 		except Exception, e:
 			self.isValidIcon.setToolTip(str(e))
 			self.isValidIcon.show()
@@ -544,36 +545,38 @@ def create_widget_list(option, min=None, max=None):
 	widget = MyListEdit(option, min, max)
 	return widget
 
+validator = validate.Validator()
 class ConfigWindow(QtGui.QMainWindow):
 	"""Window which contains controls for making changes to a ConfigObj"""
 
 	APPLY_IMMEDIATELY = 1 # GNOME style, apply settings immediately
 	APPLY_OK = 2 # KDE style, apply settings when OK is pressed
-	widget_mapping = {'integer':create_widget_integer,
-			'float':create_widget_float,
-			'boolean':create_widget_boolean,
-			'string':create_widget_string,
-			'ip_addr':create_widget_ip_addr,
-			'list':create_widget_list,
-			'force_list':create_widget_list,
-			'tuple':create_widget_list,
-			'int_list':create_widget_list,
-			'float_list':create_widget_list,
-			'bool_list':create_widget_list,
-			'string_list':create_widget_list,
-			'ip_addr_list':create_widget_list,
-			'mixed_list':create_widget_list,
-			'pass':create_widget_string, # BUG: This will lead to a string always being saved back
-			'option':create_widget_option}
+	type_mapping = {'integer':(create_widget_integer, validator.functions['integer']),
+			'float':(create_widget_float, validator.functions['float']),
+			'boolean':(create_widget_boolean, validator.functions['boolean']),
+			'string':(create_widget_string, validator.functions['string']),
+			'ip_addr':(create_widget_ip_addr, validator.functions['ip_addr']),
+			'list':(create_widget_list, validator.functions['list']),
+			'force_list':(create_widget_list, validator.functions['force_list']),
+			'tuple':(create_widget_list, validator.functions['tuple']),
+			'int_list':(create_widget_list, validator.functions['int_list']),
+			'float_list':(create_widget_list, validator.functions['float_list']),
+			'bool_list':(create_widget_list, validator.functions['bool_list']),
+			'string_list':(create_widget_list, validator.functions['string_list']),
+			'ip_addr_list':(create_widget_list, validator.functions['ip_addr_list']),
+			'mixed_list':(create_widget_list, validator.functions['mixed_list']),
+			'pass':(create_widget_string, validator.functions['pass']), # BUG: This will lead to a string always being saved back
+			'option':(create_widget_option, validator.functions['option'])}
 
-	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, widget_mapping=None, parent = None):
+	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, type_mapping=None, parent = None):
 		QtGui.QMainWindow.__init__(self, parent)
 		self.when_apply = when_apply
-		self.widget_mapping = ConfigWindow.widget_mapping
-		if widget_mapping != None:
-			self.widget_mapping.update(widget_mapping)
+		self.type_mapping = ConfigWindow.type_mapping
+		if type_mapping != None:
+			self.type_mapping.update(type_mapping)
 
-		res = conf.validate(validator, preserve_errors=True)
+		self.validator = validate.Validator()
+		res = conf.validate(self.validator, preserve_errors=True)
 
 		# Make changes to a copy of the original conf if needed
 		if when_apply != ConfigWindow.APPLY_IMMEDIATELY:
@@ -585,8 +588,7 @@ class ConfigWindow(QtGui.QMainWindow):
 		self.conf = conf
 
 		self.setWindowTitle(title)
-		res = conf.validate(validate.Validator(), preserve_errors=True)
-		options = merge_spec(conf, spec)
+		options = merge_spec(conf, spec, self.type_mapping)
 		self.options = options
 		main = QtGui.QWidget()
 		layout = QtGui.QVBoxLayout(main)
@@ -595,7 +597,7 @@ class ConfigWindow(QtGui.QMainWindow):
 		splitter = QtGui.QSplitter()
 		layout.addWidget(splitter)
 		self.splitter = splitter
-		browser = SectionBrowser(conf, self.widget_mapping)
+		browser = SectionBrowser(conf, self.validator)
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
 		browser.pageRemoved.connect(self.removePage)
@@ -693,7 +695,6 @@ class ConfigWindow(QtGui.QMainWindow):
 						continue
 
 			update(self.options,self.original_conf,False)
-				
 
 	def resetAll(self):
 		for page in [self.stacked.widget(i) for i in range(self.stacked.count())]:
@@ -708,7 +709,7 @@ class ConfigWindow(QtGui.QMainWindow):
 		self.pages[page.item] = self.stacked.removeWidget(page)
 		del self.pages[page.item]
 
-def merge_spec(config, spec):
+def merge_spec(config, spec, type_mapping):
 	"""Combine config and spec into one tree in the form of Option objects"""
 	combined = configobj.ConfigObj()
 
@@ -722,9 +723,9 @@ def merge_spec(config, spec):
 	# Recursively combine sections
 	for section in config.sections:
 		if section in spec:
-			combined[section] = merge_spec(config[section], spec[section])
+			combined[section] = merge_spec(config[section], spec[section], type_mapping)
 		elif '__many__' in spec:
-			combined[section] = merge_spec(config[section], spec['__many__'])
+			combined[section] = merge_spec(config[section], spec['__many__'], type_mapping)
 
 		combined[section].name = section
 		combined[section].parent = combined
@@ -734,11 +735,10 @@ def merge_spec(config, spec):
 		comment = spec.inline_comments[option]
 		if comment and comment.startswith('#'):
 			comment = comment[1:].strip()
-		fun_name, fun_args, fun_kwargs, default = validator._parse_with_caching(spec[option]) # WARNING: Uses unoffical method!
-		combined[option] = Option(option, config, fun_name, fun_args, fun_kwargs, default, comment)
+		fun_name, fun_args, fun_kwargs, default = validate.Validator()._parse_with_caching(spec[option]) # WARNING: Uses unoffical method!
+		combined[option] = Option(option, config, fun_name, fun_args, fun_kwargs, default, comment, type_mapping[fun_name][0], type_mapping[fun_name][1])
 
 	return combined
-
 
 def configure_externally(config, spec):
 	"""Launch a ConfigWindow in an external process"""
