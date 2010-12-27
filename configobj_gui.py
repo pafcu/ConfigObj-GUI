@@ -53,12 +53,12 @@ class Option(object):
 
 class ConfigPage(QtGui.QWidget):
 	"""Container for widgets describing options in a section"""
-	def __init__(self, section, item, parent=None):
+	def __init__(self, section, item, widget_mapping, parent=None):
 		QtGui.QWidget.__init__(self, parent)
 		layout = QtGui.QFormLayout(self)
 
 		for option in [section[x] for x in section.scalars]:
-			valueWidget = WidgetCreator.forOption(option) # Create a widget of appropriate type
+			valueWidget = widget_mapping[option.type](option)
 			valueWidget.optionChanged.connect(self.optionChanged.emit) 
 			layout.addRow(option.name, valueWidget)
 
@@ -77,9 +77,10 @@ class ConfigPage(QtGui.QWidget):
 
 class SectionBrowser(QtGui.QWidget):
 	"""TreeView browser of configuration sections. Also manages creating of config pages. It's a bit messy."""
-	def __init__(self, conf, parent=None):
+	def __init__(self, conf, widget_mapping, parent=None):
 		QtGui.QWidget.__init__(self, parent)
 		layout = QtGui.QVBoxLayout(self)
+		self.widget_mapping = widget_mapping
 
 		# Create treeview
 		self.tree = QtGui.QTreeWidget()
@@ -124,7 +125,7 @@ class SectionBrowser(QtGui.QWidget):
 			item = QtGui.QTreeWidgetItem(parent_item, [newsection.name])
 		item.setExpanded(True)
 
-		page = ConfigPage(newsection, item)
+		page = ConfigPage(newsection, item, self.widget_mapping)
 		self.pageAdded.emit(page)
 		newsection.tree_item = item
 		self.page_lookup[item] = page
@@ -502,74 +503,75 @@ class MySpinBox(MyWidget):
 		if self.option.get() != None:
 			self.main_widget.setValue(self.option.get())
 
-class WidgetCreator(object):
-	"""Class containing static methids for creating widgets representing various option types"""
-	@staticmethod
-	def forOption(option):
-		"""Automatically figures out the appropriate widget type"""
-		if option.type.endswith('list'):
-			valueWidget = WidgetCreator.create_widget_list(option, *option.args, **option.kwargs)
-		else:
-			valueWidget = getattr(WidgetCreator, 'create_widget_'+option.type)(option, *option.args, **option.kwargs)
-		return valueWidget
+def create_widget_integer(option, min=None, max=None):
+	"""Create widget for integer option"""
+	if min != None and max != None:
+		widget = MySlider(option, min, max)
+	else:
+		widget = MySpinBox(option, min, max)
+	return widget
 
-	@staticmethod
-	def create_widget_integer(option, min=None, max=None):
-		"""Create widget for integer option"""
-		if min != None and max != None:
-			widget = MySlider(option, min, max)
-		else:
-			widget = MySpinBox(option, min, max)
-		return widget
+def create_widget_string(option, min=None, max=None):
+	"""Create widget for string option"""
+	widget = MyLineEdit(option, min, max)
+	return widget
 
-	@staticmethod
-	def create_widget_string(option, min=None, max=None):
-		"""Create widget for string option"""
-		widget = MyLineEdit(option, min, max)
-		return widget
+def create_widget_float(option, min=None, max=None):
+	"""Create widget for float option"""
+	if min != None and max != None:
+		widget = MySlider(option, min, max)
+	else:
+		widget = MySpinBox(option, min, max)
+	return widget
 
-	@staticmethod
-	def create_widget_float(option, min=None, max=None):
-		"""Create widget for float option"""
-		if min != None and max != None:
-			widget = MySlider(option, min, max)
-		else:
-			widget = MySpinBox(option, min, max)
-		return widget
+def create_widget_ip_addr(option):
+	"""Create widget for ip_addr option"""
+	widget = MyIpEdit(option)
+	return widget
 
-	@staticmethod
-	def create_widget_ip_addr(option):
-		"""Create widget for ip_addr option"""
-		widget = MyIpEdit(option)
-		return widget
+def create_widget_boolean(option):
+	"""Create widget for boolean option"""
+	widget = MyCheckBox(option)
+	return widget
 
-	@staticmethod
-	def create_widget_boolean(option):
-		"""Create widget for boolean option"""
-		widget = MyCheckBox(option)
-		return widget
+def create_widget_option(option, *options):
+	"""Create widget for option option"""
+	widget = MyComboBox(option, options)
+	return widget
 
-	@staticmethod
-	def create_widget_option(option, *options):
-		"""Create widget for option option"""
-		widget = MyComboBox(option, options)
-		return widget
-
-	@staticmethod
-	def create_widget_list(option, min=None, max=None):
-		"""Create widget for any kind of list option"""
-		widget = MyListEdit(option, min, max)
-		return widget
+def create_widget_list(option, min=None, max=None):
+	"""Create widget for any kind of list option"""
+	widget = MyListEdit(option, min, max)
+	return widget
 
 class ConfigWindow(QtGui.QMainWindow):
 	"""Window which contains controls for making changes to a ConfigObj"""
 
 	APPLY_IMMEDIATELY = 1 # GNOME style, apply settings immediately
 	APPLY_OK = 2 # KDE style, apply settings when OK is pressed
+	widget_mapping = {'integer':create_widget_integer,
+			'float':create_widget_float,
+			'boolean':create_widget_boolean,
+			'string':create_widget_string,
+			'ip_addr':create_widget_ip_addr,
+			'list':create_widget_list,
+			'force_list':create_widget_list,
+			'tuple':create_widget_list,
+			'int_list':create_widget_list,
+			'float_list':create_widget_list,
+			'bool_list':create_widget_list,
+			'string_list':create_widget_list,
+			'ip_addr_list':create_widget_list,
+			'mixed_list':create_widget_list,
+			'pass':create_widget_string, # BUG: This will lead to a string always being saved back
+			'option':create_widget_option}
 
-	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, parent = None):
+	def __init__(self, conf, spec, title = 'Configure', when_apply = APPLY_IMMEDIATELY, debug = False, widget_mapping=None, parent = None):
 		QtGui.QMainWindow.__init__(self, parent)
 		self.when_apply = when_apply
+		self.widget_mapping = ConfigWindow.widget_mapping
+		if widget_mapping != None:
+			self.widget_mapping.update(widget_mapping)
 
 		res = conf.validate(validator, preserve_errors=True)
 
@@ -593,7 +595,7 @@ class ConfigWindow(QtGui.QMainWindow):
 		splitter = QtGui.QSplitter()
 		layout.addWidget(splitter)
 		self.splitter = splitter
-		browser = SectionBrowser(conf)
+		browser = SectionBrowser(conf, self.widget_mapping)
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
 		browser.pageRemoved.connect(self.removePage)
@@ -640,7 +642,6 @@ class ConfigWindow(QtGui.QMainWindow):
 
 		self.pages = {}
 		pages = browser.addSection(options)
-
 
 	optionChanged = QtCore.pyqtSignal(Option)
 	sectionAdded = QtCore.pyqtSignal(configobj.Section)
