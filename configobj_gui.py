@@ -55,20 +55,12 @@ class ConfigPage(QtGui.QWidget):
 	"""Container for widgets describing options in a section"""
 	def __init__(self, section, item, parent=None):
 		QtGui.QWidget.__init__(self, parent)
-		layout = QtGui.QGridLayout(self)
+		layout = QtGui.QFormLayout(self)
 
-		i = 0
 		for option in [section[x] for x in section.scalars]:
-			label = QtGui.QLabel(option.name) # Display option name
-			label.setSizePolicy(QtGui.QSizePolicy.Maximum, QtGui.QSizePolicy.Preferred)
-			layout.addWidget(label, i, 0)
 			valueWidget = WidgetCreator.forOption(option) # Create a widget of appropriate type
 			valueWidget.optionChanged.connect(self.optionChanged.emit) 
-			layout.addWidget(valueWidget, i, 1)
-			i += 1
-
-		# Add some spacing at the bottom so the layout remains "packed"
-		layout.addItem(QtGui.QSpacerItem(0, 0, QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Expanding), i, 0)
+			layout.addRow(option.name, valueWidget)
 
 		self.item = item # Store SectionBrowser item corresponding to this page
 		self.conf = section # Store configuration section corresponding to this page
@@ -213,6 +205,7 @@ class MyWidget(QtGui.QWidget):
 	def init(self, option, main_widget, change_signal):
 		"""Initialization that has to be performed after some actions made in __init__ in derived classes"""
 		self.main_widget = main_widget
+		self.main_widget.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Preferred)
 		self.layout.addWidget(main_widget)
 
 		self.myconnect(change_signal, self.setValue)
