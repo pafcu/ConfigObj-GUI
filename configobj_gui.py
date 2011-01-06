@@ -61,7 +61,9 @@ class ConfigPage(QtGui.QWidget):
 		for option in [section[x] for x in section.scalars]:
 			valueWidget = option.widget()
 			valueWidget.optionChanged.connect(self.optionChanged.emit) 
-			layout.addRow(option.name, valueWidget)
+			option_title = option.name.replace('_',' ')
+			option_title = option_title[0].upper() + option_title[1:]
+			layout.addRow(option_title, valueWidget)
 
 		self.item = item # Store SectionBrowser item corresponding to this page
 		self.conf = section # Store configuration section corresponding to this page
