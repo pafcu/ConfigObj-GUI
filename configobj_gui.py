@@ -49,7 +49,7 @@ class Option(object):
 		return self.name in self.section.defaults
 
 	def widget(self):
-			return self.widget_maker(self)
+			return self.widget_maker(self, *self.args, **self.kwargs)
 
 
 class ConfigPage(QtGui.QWidget):
