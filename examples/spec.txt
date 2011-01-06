@@ -9,7 +9,9 @@ myfloat = float(default=2.2, min=-1, max=10.0) # A float with min and max
 myfloat2 = float(default=1.1, min=-0.2) # A float with min but no max
 mycheckbox = boolean(default=True) # A checkbox
 nondefault = integer # An integer with no default value
+custom = mytype # Custom type
 
 [__many__]
 [[level2]]
 enabled = boolean(default=True)
+[[[__many__]]]
