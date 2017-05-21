@@ -19,16 +19,16 @@ def main():
 	wnd = configobj_gui.ConfigWindow(config, spec, when_apply=configobj_gui.ConfigWindow.APPLY_OK, type_mapping={'mytype':(configobj_gui.create_widget_string, validate.is_integer)})
 	wnd.show()
 	def printChange(option):
-		print '%s in %s changed to %s'%(option.name, option.section.name, option.get()) 
+		print('%s in %s changed to %s'%(option.name, option.section.name, option.get())) 
 	def printSectionAdded(section):
-		print 'Added section %s'%(section.name)
+		print('Added section %s'%(section.name))
 	def printSectionRemoved(section):
-		print 'Removed section %s'%(section.name)
+		print('Removed section %s'%(section.name))
 
 	wnd.optionChanged.connect(printChange)
 	wnd.sectionAdded.connect(printSectionAdded)
 	wnd.sectionRemoved.connect(printSectionRemoved)
 	app.exec_()
-	print config
+	print(config)
 
 main()

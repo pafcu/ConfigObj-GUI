@@ -254,7 +254,7 @@ class MyWidget(QtGui.QWidget):
 			value = [x.strip() for x in value.split(',')]
 		try:
 			self.option.check(value, *self.option.args, **self.option.kwargs)
-		except Exception, e:
+		except Exception as e:
 			self.isValidIcon.setToolTip(str(e))
 			self.isValidIcon.show()
 			return
@@ -622,7 +622,7 @@ class ConfigWindow(QtGui.QMainWindow):
 			dump_config = QtGui.QPushButton('Dump')
 			buttons.addButton(dump_config, QtGui.QDialogButtonBox.HelpRole)
 			def dump():
-				print self.original_conf
+				print(self.original_conf)
 			dump_config.clicked.connect(dump)
 
 		buttons.accepted.connect(self.close)
@@ -744,20 +744,20 @@ def merge_spec(config, spec, type_mapping):
 
 def configure_externally(config, spec):
 	"""Launch a ConfigWindow in an external process"""
-	import cPickle, subprocess, time
+	import pickle, subprocess, time
 	path = __file__
 	if path.endswith('.pyc'):
 		path = path[:-1]
 	proc = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-	newconf = cPickle.loads(proc.communicate(cPickle.dumps((config, spec)))[0])
+	newconf = pickle.loads(proc.communicate(pickle.dumps((config, spec)))[0])
 	newconf.write(sys.stdout)
 
 if __name__ == '__main__':
-	import cPickle
-	conf, spec = cPickle.loads(sys.stdin.read())
+	import pickle
+	conf, spec = pickle.loads(sys.stdin.read())
 	app = QtGui.QApplication(sys.argv)
 	wnd = ConfigWindow(conf, spec)
 	wnd.show()
 	app.exec_()
-	print cPickle.dumps(conf),
+	print(pickle.dumps(conf), end=' ')
 
