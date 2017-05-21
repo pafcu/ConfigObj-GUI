@@ -12,6 +12,6 @@ def main():
 
 	# Instead of creating a ConfigWindow we spawn an external process (will block)
 	config = configobj_gui.configure_externally(config, spec)
-	print config
+	print(config)
 
 main()
