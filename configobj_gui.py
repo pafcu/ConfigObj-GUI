@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 from __future__ import print_function
+
+import sip
+sip.setapi('QString', 1)
+
 import sys
 import copy
 
@@ -110,7 +114,7 @@ class SectionBrowser(QtGui.QWidget):
 		self.tree.currentItemChanged.connect(self.activateButtons)
 
 		self.conf = conf # Store configuration
-		self.page_lookup = {} # Mappig from treeview item to configuration page
+		self.page_lookup = {} # Mappig from treeview item id to configuration page
 
 	# A few signals
 	currentItemChanged = QtCore.pyqtSignal(QtGui.QTreeWidgetItem)
@@ -132,7 +136,7 @@ class SectionBrowser(QtGui.QWidget):
 		page = ConfigPage(newsection, item)
 		self.pageAdded.emit(page)
 		newsection.tree_item = item
-		self.page_lookup[item] = page
+		self.page_lookup[id(item)] = page
 
 		pages = [page]
 		for section in [newsection[x] for x in newsection.sections]:
@@ -142,14 +146,14 @@ class SectionBrowser(QtGui.QWidget):
 
 	def activateButtons(self, item):
 		"""Activate add/remove section buttons if appropriate"""
-		page = self.page_lookup[item]
+		page = self.page_lookup[id(item)]
 		conf = page.conf
 		self.addButton.setEnabled(conf.many)
 		self.removeButton.setEnabled(conf.optional)
 
 	def addEmptySection(self, item):
 		"""Add a new empty section based on the spec of the parent section corresponding to item"""
-		parent = self.page_lookup[item].conf # Load combined config for page matching selected item
+		parent = self.page_lookup[id(item)].conf # Load combined config for page matching selected item
 		spec = parent.spec['__many__'] # Get spec
 		conf = configobj.ConfigObj(configspec=spec)
 		conf.validate(self.validator) # Create an empty config matching spec
@@ -181,11 +185,11 @@ class SectionBrowser(QtGui.QWidget):
 	def removeSection(self, item):
 		"""Delete configuration section corresponding to item"""
 		item.parent().removeChild(item)
-		page = self.page_lookup[item]
+		page = self.page_lookup[id(item)]
 		self.sectionRemoved.emit(page.conf)
 		del page.conf.conf.parent[str(item.text(0))]
 		self.pageRemoved.emit(page)
-		del self.page_lookup[item]
+		del self.page_lookup[id(item)]
 
 
 class MyScrollArea(QtGui.QScrollArea):
@@ -600,6 +604,7 @@ class ConfigWindow(QtGui.QMainWindow):
 		splitter = QtGui.QSplitter()
 		layout.addWidget(splitter)
 		self.splitter = splitter
+
 		browser = SectionBrowser(conf, self.validator)
 		browser.currentItemChanged.connect(self.changePage)
 		browser.pageAdded.connect(self.addPage)
@@ -653,7 +658,7 @@ class ConfigWindow(QtGui.QMainWindow):
 	sectionRemoved = QtCore.pyqtSignal(configobj.Section)
 
 	def changePage(self, newItem):
-		index = self.pages[newItem]
+		index = self.pages[id(newItem)]
 		self.stacked.setCurrentIndex(index)
 
 	def updateOriginalConf(self):
@@ -704,13 +709,13 @@ class ConfigWindow(QtGui.QMainWindow):
 			page.restoreDefault()
 
 	def addPage(self, page):
-		self.pages[page.item] = self.stacked.addWidget(page)
+		self.pages[id(page.item)] = self.stacked.addWidget(page)
 		if self.when_apply == ConfigWindow.APPLY_IMMEDIATELY:
 			page.optionChanged.connect(self.optionChanged.emit)
 
 	def removePage(self, page):
-		self.pages[page.item] = self.stacked.removeWidget(page)
-		del self.pages[page.item]
+		self.pages[id(page.item)] = self.stacked.removeWidget(page)
+		del self.pages[id(page.item)]
 
 def merge_spec(config, spec, type_mapping):
 	"""Combine config and spec into one tree in the form of Option objects"""
