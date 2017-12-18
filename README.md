@@ -21,4 +21,5 @@ The basic usage is as follows:
 	print conf
 
 Support the developer if you like this software:
+
 [![Donate using Liberapay](https://liberapay.com/assets/widgets/donate.svg)](https://liberapay.com/saparvia/donate)
